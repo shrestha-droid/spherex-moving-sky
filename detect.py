@@ -200,13 +200,13 @@ def resample(v, x0, y0, img, gw, n):
     return out.reshape(n, n)
 
 
-def run(ra0, dec0, box, det, days):
+def run(ra0, dec0, box, det, days, pass_index=0, out_dir="web"):
     n = int(round(box * 3600 / PIX))
     gw = grid_wcs(ra0, dec0, n)
     with ThreadPoolExecutor(4) as ex:
-        vs = list(ex.map(Visit, visits(ra0, dec0, det, days)))
+        vs = list(ex.map(Visit, visits(ra0, dec0, det, days, pass_index)))
     print(f"{len(vs)} visits, {n}x{n} px region", flush=True)
-    os.makedirs("web/img", exist_ok=True)
+    os.makedirs(f"{out_dir}/img", exist_ok=True)
     dets, frames = [], []
     for v in vs:
         x0, y0, img, var, flg = region(v, gw, n)
@@ -214,7 +214,7 @@ def run(ra0, dec0, box, det, days):
         dets += s
         sky = resample(v, x0, y0, img, gw, n)
         lo, hi = np.nanpercentile(sky, 5), np.nanpercentile(sky, 99.7)
-        png(f"web/img/{v.id}.png", (np.array(to_u8(sky, lo, hi), np.uint8).reshape(n, n)[::-1] // 4) * 4)  # north up; 64 grey levels compress better
+        png(f"{out_dir}/img/{v.id}.png", (np.array(to_u8(sky, lo, hi), np.uint8).reshape(n, n)[::-1] // 4) * 4)  # north up; 64 grey levels compress better
         frames.append({"id": v.id, "mjd": v.mjd, "img": f"img/{v.id}.png"})
         print(f"  {v.id}: {len(s)} outlier seeds", flush=True)
     tracks = link(dets, ra0, dec0)

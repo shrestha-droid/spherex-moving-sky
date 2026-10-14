@@ -98,7 +98,8 @@ class RemoteFits:
     def __init__(self, url, until="VARIANCE"):
         self.url, self.hdus = url, {}
         name = os.path.basename(urllib.parse.urlparse(url).path)
-        heads = cached_json(f"hdr_{name}.json", lambda: self._read_headers(until))
+        heads = cached_json(f"hdr_{name}.json" if until == "VARIANCE" else f"hdr_{name}_{until}.json",
+                            lambda: self._read_headers(until))
         from astropy.io import fits
         for ext, (text, start) in heads.items():
             self.hdus[ext] = (fits.Header.fromstring(text), start)
@@ -127,6 +128,38 @@ class RemoteFits:
             off += hlen + -(-nbytes // 2880) * 2880
             if ext == until:
                 return out
+
+    def wavelength(self, x, y):
+        """(wavelength, bandwidth) in microns at 0-based pixel (x, y), from the WCS-WAVE lookup table.
+
+        Needs RemoteFits(url, until="WCS-WAVE")."""
+        import numpy as np
+        if not hasattr(self, "_wave"):
+            hdr, start = self.hdus["WCS-WAVE"]
+            path = os.path.join(CACHE, "px", os.path.basename(self.url) + "_wave.npy")
+            if os.path.exists(path):
+                raw = np.load(path).tobytes()
+            else:
+                raw, _ = get(self.url, headers={"Range": f"bytes={start}-{start + hdr['NAXIS1'] - 1}"})
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                np.save(path, np.frombuffer(raw, np.uint8))
+            n = lambda k: int(re.match(r"(\d+)", hdr[k]).group(1))  # TFORMn = '13J' etc.
+            nx, ny = n("TFORM1"), n("TFORM2")
+            gx = np.frombuffer(raw[:4 * nx], ">i4").astype(float) - 1  # table is 1-based
+            gy = np.frombuffer(raw[4 * nx:4 * (nx + ny)], ">i4").astype(float) - 1
+            vals = np.frombuffer(raw[4 * (nx + ny):4 * (nx + ny) + 8 * nx * ny], ">f4").reshape(ny, nx, 2)
+            self._wave = gx, gy, vals  # FITS TDIM (2,nx,ny) -> [iy][ix][wave|bw]
+        gx, gy, vals = self._wave
+        fx, fy = np.interp(x, gx, np.arange(len(gx))), np.interp(y, gy, np.arange(len(gy)))
+        ix, iy = min(int(fx), len(gx) - 2), min(int(fy), len(gy) - 2)
+        tx, ty = fx - ix, fy - iy
+        corners = [(iy, ix, (1 - tx) * (1 - ty)), (iy, ix + 1, tx * (1 - ty)), (iy + 1, ix, (1 - tx) * ty), (iy + 1, ix + 1, tx * ty)]
+        good = [(vals[a, b], w) for a, b, w in corners if vals[a, b, 0] > 0]  # zeros = no filter coverage
+        if not good:
+            return float("nan"), float("nan")
+        wsum = sum(w for _, w in good) or 1.0
+        v = sum(val * w for val, w in good) / wsum if wsum > 0 else good[0][0]
+        return float(v[0]), float(v[1])
 
     def header(self, ext="IMAGE"):
         return self.hdus[ext][0]

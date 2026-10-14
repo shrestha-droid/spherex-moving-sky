@@ -22,10 +22,22 @@ EDGE = 12
 BAD = sum(1 << b for b in (0, 1, 2, 4, 5, 6, 9, 10, 11, 15, 17))
 
 
-def visits(ra, dec, det, days):
-    """First frame of each visit (exposure bursts > ~1 h apart) within `days` of the first."""
+def passes(ra, dec, det):
+    """Images of one detector covering a point, split into sky passes (SPHEREx returns every ~6 months)."""
     imgs = sorted((i for i in S.images(ra, dec) if i["energy_bandpassname"] == f"SPHEREx-D{det}"),
                   key=lambda i: float(i["t_min"]))
+    out = []
+    for i in imgs:
+        if not out or float(i["t_min"]) - float(out[-1][-1]["t_min"]) > 20:
+            out.append([])
+        out[-1].append(i)
+    return out
+
+
+def visits(ra, dec, det, days, pass_index=0):
+    """First frame of each visit (exposure bursts > ~1 h apart) within `days` of a pass's start."""
+    ps = passes(ra, dec, det)
+    imgs = ps[pass_index] if pass_index < len(ps) else []
     out = []
     for i in imgs:
         t = float(i["t_min"])
@@ -37,12 +49,12 @@ def visits(ra, dec, det, days):
     return out
 
 
-def measure(img, var, dx, dy):
+def measure(img, var, dx, dy, ap_r=AP):
     """Aperture flux and SNR at stamp center + (dx, dy) subpixel offset."""
     yy, xx = np.mgrid[-R:R + 1, -R:R + 1]
     r = np.hypot(xx - dx, yy - dy)
     ann = img[(r >= BG[0]) & (r <= BG[1])]
-    ap = r <= AP
+    ap = r <= ap_r
     if np.isnan(img[ap]).any() or np.isnan(ann).all():
         return None
     bg = np.nanmedian(ann)
@@ -61,10 +73,10 @@ def to_u8(stamp, lo, hi):
 
 
 class Visit:
-    def __init__(self, row):
+    def __init__(self, row, until="VARIANCE"):
         self.row, self.id = row, row["obs_id"]
         self.mjd = (float(row["t_min"]) + float(row["t_max"])) / 2
-        self.fits = S.RemoteFits(row["access_url"])
+        self.fits = S.RemoteFits(row["access_url"], until=until)
         self.wcs = WCS(self.fits.header("IMAGE"))
         self.nx, self.ny = self.fits.header("IMAGE")["NAXIS1"], self.fits.header("IMAGE")["NAXIS2"]
 
@@ -83,8 +95,8 @@ class Visit:
         return img, var, x - X, y - Y
 
 
-def run(ra, dec, det=1, days=2.6):
-    rows = visits(ra, dec, det, days)
+def run(ra, dec, det=1, days=2.6, pass_index=0):
+    rows = visits(ra, dec, det, days, pass_index)
     print(f"{len(rows)} visits:", [r["obs_id"] for r in rows], flush=True)
     with ThreadPoolExecutor(4) as ex:
         vs = list(ex.map(Visit, rows))
@@ -147,6 +159,20 @@ def summarize(results):
     return out
 
 
+def slim(results, n=12):
+    """Keep image stamps only for the gallery: best-SNR recovery per asteroid."""
+    best = {}
+    for r in results:
+        if r["status"] == "recovered" and r.get("cmp") and (r["name"] not in best or r["m"]["snr"] > best[r["name"]]["m"]["snr"]):
+            best[r["name"]] = r
+    keep = {id(r) for r in sorted(best.values(), key=lambda r: r["vmag"])[:n]}
+    for r in results:
+        if id(r) not in keep:
+            r.pop("stamp", None)
+            r.get("cmp", {}).pop("stamp", None)
+    return results
+
+
 if __name__ == "__main__":
     assert classify({"m": {"snr": 8, "flux": 10, "peak_off": 0.5}, "cmp": {"m": {"flux": 1}}}) == "recovered"
     assert classify({"m": {"snr": 8, "flux": 10, "peak_off": 0.5}, "cmp": {"m": {"flux": 9}}}) == "blended"
@@ -159,16 +185,7 @@ if __name__ == "__main__":
     summary = summarize(results)
     for s in summary:
         print(f"  {s['label']:>6}: {s['recovered']}/{s['n']}")
-    # keep image stamps only for the gallery: best-SNR recovery per asteroid
-    best = {}
-    for r in results:
-        if r["status"] == "recovered" and r.get("cmp") and (r["name"] not in best or r["m"]["snr"] > best[r["name"]]["m"]["snr"]):
-            best[r["name"]] = r
-    keep = {id(r) for r in sorted(best.values(), key=lambda r: r["vmag"])[:12]}
-    for r in results:
-        if id(r) not in keep:
-            r.pop("stamp", None)
-            r.get("cmp", {}).pop("stamp", None)
+    slim(results)
     os.makedirs("web", exist_ok=True)
     json.dump({"field": {"ra": ra, "dec": dec, "detector": det, "stamp": 2 * R + 1},
                "visits": [{"id": v.id, "mjd": v.mjd} for v in vs],
