@@ -161,6 +161,49 @@ class RemoteFits:
         v = sum(val * w for val, w in good) / wsum if wsum > 0 else good[0][0]
         return float(v[0]), float(v[1])
 
+    def psf_plane(self, x, y):
+        """The 101x101 PSF (10x oversampled) for the detector zone containing pixel (x, y).
+
+        The PSF extension holds an 11x11 grid of zones; needs RemoteFits(url, until="WCS-WAVE")."""
+        import numpy as np
+        hdr, start = self.hdus["PSF"]
+        nx, ny, nz = hdr["NAXIS1"], hdr["NAXIS2"], hdr["NAXIS3"]
+        side = int(round(nz ** 0.5))
+        ix, iy = min(max(int(x / 2040 * side), 0), side - 1), min(max(int(y / 2040 * side), 0), side - 1)
+        k = iy * side + ix  # XCTR_1 is zone (0,0), XCTR_2 is (1,0), ...
+        path = os.path.join(CACHE, "px", f"{os.path.basename(self.url)}_psf{k}.npy")
+        if os.path.exists(path):
+            return np.load(path)
+        off = start + k * nx * ny * 4
+        raw, _ = get(self.url, headers={"Range": f"bytes={off}-{off + nx * ny * 4 - 1}"})
+        plane = np.frombuffer(raw, ">f4").reshape(ny, nx).astype(np.float32)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.save(path, plane)
+        return plane
+
+    def psf_kernel(self, x, y, dx, dy, half=4):
+        """Native-pixel PSF kernel ((2*half+1)^2, sums to 1) for a source at subpixel offset (dx, dy)."""
+        import numpy as np
+        p = np.nan_to_num(self.psf_plane(x, y))
+        os_ = self.hdus["PSF"][0].get("OVERSAMP", 10)
+        c = p.shape[0] // 2
+        k = np.zeros((2 * half + 1, 2 * half + 1))
+        for jy in range(-half, half + 1):
+            iy0 = int(round(c + os_ * (jy - dy) - os_ / 2))
+            for jx in range(-half, half + 1):
+                ix0 = int(round(c + os_ * (jx - dx) - os_ / 2))
+                k[jy + half, jx + half] = p[max(iy0, 0):max(iy0 + os_, 0), max(ix0, 0):max(ix0 + os_, 0)].sum()
+        return k / k.sum() if k.sum() > 0 else k
+
+    def ap_correction(self, x, y, r_px):
+        """Total PSF light / light inside a circular aperture of r_px native pixels."""
+        import numpy as np
+        p = np.nan_to_num(self.psf_plane(x, y))
+        os_ = self.hdus["PSF"][0].get("OVERSAMP", 10)
+        yy, xx = np.mgrid[:p.shape[0], :p.shape[1]] - p.shape[0] // 2
+        inside = p[np.hypot(xx, yy) <= r_px * os_].sum()
+        return float(p.sum() / inside) if inside > 0 else 1.0
+
     def header(self, ext="IMAGE"):
         return self.hdus[ext][0]
 

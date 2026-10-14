@@ -85,7 +85,8 @@ def run_field(ra, dec, p):
             "start_mjd": min(v.mjd for v in vs), "visits": len(vs), "summary": summary,
             "predicted": len(results), "tracks": len(det["tracks"]),
             "found": sc["found"], "expected": sc["expected"], "candidates": sc["candidates"],
-            "false_alarms": sc["false_alarms"], "spectra": [s["name"] for s in specs if s["points"]],
+            "false_alarms": sc["false_alarms"], "artifacts": sc.get("artifacts", 0),
+            "spectra": [s["name"] for s in specs if s["points"]],
             "minutes": round((time.time() - t) / 60, 1)}
     json.dump(info, open(f"{out}/done.json", "w"))
     return info
@@ -107,7 +108,22 @@ def combine(infos):
             "known_tracks": sum(len(i["found"]) for i in done),
             "candidates": sum(i["candidates"] for i in done),
             "false_alarms": round(sum(i["false_alarms"] for i in done), 2),
+            "artifacts": sum(i.get("artifacts", 0) for i in done),
             "spectra": sum(len(i["spectra"]) for i in done)}
+
+
+def bake_facts(c, path="web/index.html"):
+    """Write the headline numbers into the HTML so they show before (or without) JavaScript."""
+    bright = [b for b in c["completeness"] if b["label"] in ("V<15", "15-16", "16-17")]
+    n, r = sum(b["n"] for b in bright), sum(b["recovered"] for b in bright)
+    facts = [("Fields searched", c["fields"], f'{c["area_deg2"]} deg²'), ("JPL predictions checked", f'{c["predicted"]:,}', ""),
+             ("Bright asteroids recovered", f"{round(100 * r / n) if n else 0}%", f"{r}/{n} · V<17"),
+             ("Unidentified vs. chance", c["candidates"], f'vs {c["false_alarms"]} expected')]
+    dl = '<dl class="facts" id="facts">' + "".join(
+        f"<div><dt>{k}</dt><dd>{v}{f'<small>{s}</small>' if s else ''}</dd></div>" for k, v, s in facts) + "</dl>"
+    html = open(path).read()
+    a, b = html.index("<!--facts:start-->") + len("<!--facts:start-->"), html.index("<!--facts:end-->")
+    open(path, "w").write(html[:a] + dl + html[b:])
 
 
 if __name__ == "__main__":
@@ -121,4 +137,5 @@ if __name__ == "__main__":
         except Exception as e:  # one bad field must not sink a multi-hour run
             print(f"  FAILED {fid(ra, dec, p)}: {e!r}", flush=True)
         json.dump({"combined": combine(infos), "fields": infos}, open("web/survey.json", "w"))
+    bake_facts(combine(infos))
     print("\n", json.dumps(combine(infos), indent=1))

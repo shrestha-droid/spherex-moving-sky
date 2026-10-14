@@ -59,7 +59,12 @@ def measure(img, var, dx, dy, ap_r=AP):
         return None
     bg = np.nanmedian(ann)
     flux = float(np.sum(img[ap] - bg))
-    noise = float(np.sqrt(np.sum(var[ap]) + ap.sum() ** 2 * np.nanvar(ann) / np.isfinite(ann).sum()))
+    # robust sky scatter (MAD): a star in the annulus must not inflate the noise
+    ann = ann[np.isfinite(ann)]
+    sky_sig = 1.4826 * np.median(np.abs(ann - bg))
+    # per pixel: the pipeline variance or the measured sky scatter, whichever is larger; plus the
+    # uncertainty of the background level itself
+    noise = float(np.sqrt(np.sum(np.maximum(var[ap], sky_sig ** 2)) + ap.sum() ** 2 * sky_sig ** 2 / len(ann)))
     near = np.where(r <= 2.5, img, -np.inf)
     py, px = np.unravel_index(np.argmax(near), img.shape)
     return {"flux": flux, "snr": flux / noise if noise > 0 else 0.0, "bg": float(bg),

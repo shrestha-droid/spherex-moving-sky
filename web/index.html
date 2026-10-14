@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SPHEREx Moving Sky</title>
-<meta name="description" content="Finding moving objects in NASA SPHEREx all-sky images, and proving it works against JPL's catalogue of known asteroids.">
+<meta name="description" content="A public tool for finding things that move in NASA SPHEREx all-sky images, from main-belt asteroids to Planet-X-class distant worlds, graded against JPL's catalogue.">
 <meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,7 +14,7 @@
    Real SPHEREx exposure IDs are the serial numbers; every number on the page is measured. */
 :root {
   --bg: #04060c; --bg-2: #080c18; --ink: #e9edf7; --ink-2: #b4bcd3; --ink-3: #7d87a3;
-  --ir: #ff6b4a; --ir-2: #ff8f6b; --known: #4fd8ff; --cand: #ffb547; --pred: #8d97b5; --ok: #5ee6a0;
+  --ir: #ff6b4a; --ir-2: #ff8f6b; --known: #4fd8ff; --cand: #ffb547; --pred: #8d97b5; --ok: #5ee6a0; --bad: #ff5d73;
   --rule: rgba(190, 205, 255, 0.10); --rule-2: rgba(190, 205, 255, 0.18); --rule-3: rgba(190, 205, 255, 0.34);
   --display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --sans: "Archivo", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
@@ -27,7 +27,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.6 v
 h1, h2, h3 { margin: 0; font-weight: 400; text-wrap: balance; }
 p { margin: 0; text-wrap: pretty; }
 a { color: inherit; }
-button { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 ::selection { background: var(--ir); color: var(--bg); }
 :focus-visible { outline: 1.5px solid var(--ir); outline-offset: 3px; }
 .wrap { width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
@@ -36,16 +36,14 @@ em { font-family: var(--display); font-style: italic; color: var(--ir); font-wei
 .serial { font: 500 0.74rem var(--mono); letter-spacing: 0.06em; color: var(--ir-2); }
 .mono { font-family: var(--mono); }
 .muted { color: var(--ink-3); }
-.lede { color: var(--ink-2); font-size: clamp(1.02rem, 1.3vw, 1.18rem); line-height: 1.65; max-width: 40rem; }
+.lede { color: var(--ink-2); font-size: clamp(1.02rem, 1.3vw, 1.18rem); line-height: 1.65; max-width: 42rem; }
+.small { font-size: .84rem; }
 
-/* Materials (raised glass with a lit inner edge, not a drawn border) */
 .surface { background: rgba(14, 19, 34, 0.66); backdrop-filter: saturate(160%) blur(18px); -webkit-backdrop-filter: saturate(160%) blur(18px);
   box-shadow: 0 0 0 0.5px rgba(190, 205, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.35), 0 18px 40px -22px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06); border-radius: 14px; }
-.sunken { background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.05); border-radius: 12px; }
 .press { transition: transform .16s var(--ease), background-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease), opacity .2s var(--ease); }
 .press:active:not(:disabled) { transform: scale(0.96); }
 
-/* Buttons */
 .btn { display: inline-flex; align-items: center; gap: .6rem; padding: .85rem 1.3rem; border-radius: 999px; text-decoration: none; cursor: pointer; border: 0;
   font: 600 .72rem var(--sans); font-stretch: 125%; letter-spacing: .16em; text-transform: uppercase; background: var(--ink); color: var(--bg); }
 .btn:hover { background: #fff; }
@@ -53,17 +51,19 @@ em { font-family: var(--display); font-style: italic; color: var(--ir); font-wei
 .btn.ghost:hover { background: rgba(255, 255, 255, 0.06); }
 .btn.sm { padding: .55rem .9rem; font-size: .64rem; }
 .btn[aria-pressed="true"] { background: var(--ir); color: var(--bg); }
+.btn:disabled { opacity: .5; cursor: progress; }
+.field { display: grid; gap: .25rem; }
+.field input, .field select { background: rgba(0,0,0,.35); border: 0; box-shadow: inset 0 0 0 1px var(--rule-2); border-radius: 10px; padding: .6rem .75rem; font: 500 .9rem var(--mono); min-width: 0; }
+.field input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--ir); }
 
-/* Nav */
 .nav { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--rule); }
 .nav .wrap { display: flex; align-items: center; gap: 1.6rem; height: 62px; }
 .logo { display: flex; align-items: center; gap: .65rem; text-decoration: none; font: 700 .74rem var(--sans); font-stretch: 125%; letter-spacing: .2em; text-transform: uppercase; white-space: nowrap; }
 .logo svg { width: 26px; height: 26px; flex: none; }
-.nav nav { display: flex; gap: 1.5rem; margin-left: auto; }
-.nav nav a { text-decoration: none; font-size: .86rem; color: var(--ink-2); }
+.nav nav { display: flex; gap: 1.3rem; margin-left: auto; }
+.nav nav a { text-decoration: none; font-size: .84rem; color: var(--ink-2); }
 .nav nav a:hover { color: var(--ink); text-decoration: underline; text-decoration-color: var(--ir); text-underline-offset: 6px; }
 
-/* Hero */
 .hero { position: relative; min-height: min(92vh, 900px); display: grid; align-items: center; overflow: hidden; isolation: isolate; }
 #sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
 .hero::after { content: ""; position: absolute; inset: auto 0 0 0; height: 40%; background: linear-gradient(to bottom, transparent, var(--bg)); z-index: -1; pointer-events: none; }
@@ -71,35 +71,33 @@ em { font-family: var(--display); font-style: italic; color: var(--ir); font-wei
 .hero h1 { font-family: var(--display); font-size: clamp(3rem, 8.4vw, 7.4rem); line-height: .94; letter-spacing: -0.025em; margin: 1.2rem 0 1.5rem; }
 .hero h1 em { display: block; }
 .cta { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 2.2rem; }
-.facts { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 0 clamp(1.4rem, 4vw, 3rem); margin: 3rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule-2); max-width: 52rem; }
+.facts { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 0 clamp(1.4rem, 4vw, 3rem); margin: 3rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule-2); max-width: 56rem; }
 .facts dt { font: 600 .6rem var(--sans); font-stretch: 125%; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3); }
 .facts dd { margin: .3rem 0 0; font: 400 clamp(1.6rem, 3vw, 2.3rem)/1 var(--display); font-variant-numeric: tabular-nums; }
 .facts dd small { font: 500 .7rem var(--mono); color: var(--ink-3); margin-left: .3rem; }
 @media (max-width: 720px) { .facts { grid-template-columns: 1fr 1fr; row-gap: 1.2rem; } .nav nav { display: none; } }
 
-/* Microprint: real exposure IDs */
 .micro { overflow: hidden; white-space: nowrap; border-block: 1px solid var(--rule); background: rgba(255, 107, 74, 0.04); }
 .micro span { display: inline-block; padding: .38rem 0; font: 500 .6rem var(--mono); letter-spacing: .28em; text-transform: uppercase; color: rgba(233, 237, 247, 0.42); animation: micro 120s linear infinite; }
 @keyframes micro { to { transform: translateX(-50%); } }
 
-/* Sections */
 section.block { padding-block: clamp(4.5rem, 9vw, 7.5rem); }
-.head { max-width: 50rem; margin-bottom: clamp(2rem, 4vw, 3rem); }
+section.block.tight { padding-top: 0; }
+.head { max-width: 52rem; margin-bottom: clamp(2rem, 4vw, 3rem); }
 .head .num { display: block; font: italic 400 1rem var(--display); color: var(--ir); margin-bottom: .4rem; }
 .head h2 { font-family: var(--display); font-size: clamp(2.3rem, 5vw, 4rem); line-height: 1.02; letter-spacing: -0.02em; margin-top: .5rem; }
 .head .lede { margin-top: 1.1rem; }
 
-/* Field plates + sky strip */
 .plates { display: flex; gap: .55rem; overflow-x: auto; padding-bottom: .4rem; scrollbar-width: thin; }
 .plate { flex: none; text-align: left; cursor: pointer; padding: .7rem .9rem; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px var(--rule); min-width: 9.5rem; }
 .plate:hover { background: rgba(255, 255, 255, 0.06); }
 .plate[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--ir); background: rgba(255, 107, 74, 0.08); }
+.plate.px { box-shadow: inset 0 0 0 1px rgba(255,181,71,.45); }
 .plate b { display: block; font: 400 1.15rem/1.15 var(--display); margin-top: .15rem; }
 .plate .k { font: 500 .62rem var(--mono); color: var(--ink-3); display: block; margin-top: .25rem; }
 .strip { margin: 1rem 0 1.6rem; }
 .strip svg { width: 100%; height: auto; display: block; }
 
-/* Viewer */
 .viewer { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
 @media (max-width: 900px) { .viewer { grid-template-columns: 1fr; } }
 .stage { position: relative; aspect-ratio: 1; overflow: hidden; background: #000; border-radius: 14px; box-shadow: 0 0 0 .5px var(--rule-2), 0 30px 60px -30px rgba(0,0,0,.9); touch-action: none; cursor: grab; }
@@ -113,14 +111,25 @@ section.block { padding-block: clamp(4.5rem, 9vw, 7.5rem); }
 .controls { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; margin-top: .9rem; }
 .controls input[type=range] { flex: 1; min-width: 160px; accent-color: var(--ir); }
 .when { font: 500 .72rem var(--mono); color: var(--ink-2); min-width: 15ch; }
-.side { padding: 18px; display: grid; gap: 14px; align-content: start; }
+.side { padding: 18px; display: grid; gap: 12px; align-content: start; }
 .toggle { display: flex; gap: .6rem; align-items: center; font-size: .9rem; cursor: pointer; }
 .toggle input { accent-color: var(--ir); width: 16px; height: 16px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: .25rem 1rem; font-size: .84rem; }
 .kv dt { color: var(--ink-3); } .kv dd { margin: 0; font-family: var(--mono); font-size: .78rem; text-align: right; }
+.stretch { display: grid; grid-template-columns: auto 1fr; gap: .45rem .8rem; align-items: center; font: 500 .7rem var(--mono); color: var(--ink-3); }
+.stretch input[type=range] { accent-color: var(--ir); width: 100%; }
+.segmented { display: inline-flex; flex-wrap: wrap; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px var(--rule); }
+.segmented button { border: 0; background: transparent; cursor: pointer; padding: .4rem .75rem; border-radius: 999px; font: 600 .6rem var(--sans); font-stretch: 125%; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 
-/* Ledger */
+.vetstrip { margin-top: 14px; padding: 14px 16px; display: grid; gap: .6rem; }
+.vetstrip .row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.vetstrip figure { margin: 0; flex: none; display: grid; gap: 4px; justify-items: center; }
+.vetstrip .pair { display: flex; gap: 3px; }
+.vetstrip canvas { width: 64px; height: 64px; image-rendering: pixelated; border-radius: 6px; box-shadow: 0 0 0 .5px var(--rule-2); }
+.vetstrip figcaption { font: 500 .58rem/1.35 var(--mono); color: var(--ink-3); text-align: center; }
+
 .ledger { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule-3); }
 .ledger li { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 0 1.2rem; padding: 1.1rem 0; border-bottom: 1px solid var(--rule-2); cursor: pointer; }
 .ledger li:hover .t { color: #fff; }
@@ -130,39 +139,56 @@ section.block { padding-block: clamp(4.5rem, 9vw, 7.5rem); }
 .ledger .t small { display: block; font: 500 .66rem var(--mono); color: var(--ink-3); margin-top: .25rem; letter-spacing: .04em; }
 .ledger .lead { border-bottom: 2px dotted var(--rule-2); transform: translateY(.1em); min-width: 1.5rem; }
 .badge { font: 600 .6rem var(--sans); font-stretch: 125%; letter-spacing: .16em; text-transform: uppercase; padding: .3rem .6rem; border-radius: 999px; box-shadow: inset 0 0 0 1px currentColor; white-space: nowrap; }
-.empty { padding: 1.4rem 0; color: var(--ink-3); border-bottom: 1px solid var(--rule-2); }
+.empty { padding: 1.4rem 0; color: var(--ink-3); border-bottom: 1px solid var(--rule-2); cursor: default !important; }
+.artifacts { margin-top: 1rem; }
+.artifacts summary { cursor: pointer; color: var(--ink-3); font-size: .9rem; }
 @media (max-width: 640px) { .ledger li { grid-template-columns: 1fr auto; row-gap: .6rem; } .ledger .lead { display: none; } .ledger .stamps { grid-column: 1 / -1; } }
 
-/* Spectra */
-.specs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 16px; }
-.spec { padding: 18px 18px 12px; }
-.spec header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
-.spec h3 { font: 400 1.5rem/1.1 var(--display); }
-.spec svg { width: 100%; height: auto; display: block; margin-top: .6rem; }
-.spec .note { font-size: .82rem; color: var(--ink-3); margin-top: .3rem; }
-.segmented { display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px var(--rule); }
-.segmented button { border: 0; background: transparent; cursor: pointer; padding: .4rem .8rem; border-radius: 999px; font: 600 .62rem var(--sans); font-stretch: 125%; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
-.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
-
-/* Proof */
-.proof { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
-@media (max-width: 900px) { .proof { grid-template-columns: 1fr; } }
+.px-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .px-grid { grid-template-columns: 1fr; } }
 .panel { padding: 22px; }
 .panel h3 { font: 400 1.6rem/1.15 var(--display); margin: .4rem 0 .8rem; }
 .panel svg { width: 100%; height: auto; display: block; }
+.verdict { font: 400 clamp(1.5rem, 2.6vw, 2.1rem)/1.15 var(--display); margin: .2rem 0 .8rem; }
+.verdict b { color: var(--ok); font-weight: 400; }
+.forced { display: flex; gap: 4px; flex-wrap: wrap; margin-top: .4rem; }
+.forced span { font: 500 .66rem var(--mono); padding: .25rem .45rem; border-radius: 6px; background: rgba(255,255,255,.05); }
+
+.specs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+.spec { padding: 18px 18px 14px; }
+.spec header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.spec h3 { font: 400 1.5rem/1.1 var(--display); }
+.spec svg { width: 100%; height: auto; display: block; margin-top: .6rem; }
+.spec .note { font-size: .82rem; color: var(--ink-3); margin-top: .35rem; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: .5rem; }
+.tag { font: 500 .64rem var(--mono); padding: .22rem .5rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--rule-2); color: var(--ink-2); }
+.tag.jpl { color: var(--known); box-shadow: inset 0 0 0 1px rgba(79,216,255,.35); }
+
+.proof { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .proof { grid-template-columns: 1fr; } }
 .meter { display: grid; gap: .8rem; margin-top: .6rem; }
-.meter .row { display: grid; grid-template-columns: 9rem 1fr auto; gap: .8rem; align-items: center; font-size: .86rem; }
+.meter .row { display: grid; grid-template-columns: 10rem 1fr auto; gap: .8rem; align-items: center; font-size: .86rem; }
 .meter .bar { height: 10px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; }
 .meter .bar i { display: block; height: 100%; border-radius: 99px; transform-origin: left; animation: grow 1.2s var(--ease-soft) both; }
 @keyframes grow { from { transform: scaleX(0); } }
 .pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 12px; margin-top: 16px; }
-.pair { padding: 12px; }
-.pair .st { display: flex; gap: 6px; }
-.pair canvas { width: 50%; aspect-ratio: 1; image-rendering: pixelated; border-radius: 8px; box-shadow: 0 0 0 .5px var(--rule-2); }
-.pair b { display: block; font: 400 1.1rem/1.2 var(--display); margin-top: .6rem; }
-.pair span { font: 500 .66rem var(--mono); color: var(--ink-3); }
+.gpair { padding: 12px; }
+.gpair .st { display: flex; gap: 6px; }
+.gpair canvas { width: 50%; aspect-ratio: 1; image-rendering: pixelated; border-radius: 8px; box-shadow: 0 0 0 .5px var(--rule-2); }
+.gpair b { display: block; font: 400 1.1rem/1.2 var(--display); margin-top: .6rem; }
+.gpair span { font: 500 .66rem var(--mono); color: var(--ink-3); }
 
-/* Method */
+.live { display: grid; grid-template-columns: 1fr 1.1fr; gap: 16px; }
+@media (max-width: 900px) { .live { grid-template-columns: 1fr; } }
+.liveform { display: grid; grid-template-columns: 1fr 1fr auto; gap: .6rem; align-items: end; }
+.exps { max-height: 260px; overflow: auto; margin-top: .8rem; border-top: 1px solid var(--rule-2); }
+.exps button { display: grid; grid-template-columns: 9.5rem 2.6rem 1fr; gap: .6rem; width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer; padding: .45rem .2rem; border-bottom: 1px solid var(--rule); font: 500 .72rem var(--mono); color: var(--ink-2); }
+.exps button:hover, .exps button[aria-pressed="true"] { background: rgba(255,107,74,.07); color: var(--ink); }
+.livecut { position: relative; aspect-ratio: 1; background: #000; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 .5px var(--rule-2); }
+.livecut canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+.console { margin-top: .8rem; background: #02030a; border-radius: 10px; padding: .7rem .8rem; font: 500 .66rem/1.6 var(--mono); color: #9fe6b8; max-height: 210px; overflow: auto; box-shadow: inset 0 0 0 1px var(--rule); white-space: pre-wrap; word-break: break-all; }
+.console .dim { color: #5c6683; } .console .err { color: var(--bad); }
+
 .articles { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule-3); }
 .articles article { padding: 2rem 2rem 0 0; display: grid; gap: .7rem; align-content: start; }
 .articles article + article { padding-left: 2rem; border-left: 1px solid var(--rule-2); }
@@ -170,7 +196,7 @@ section.block { padding-block: clamp(4.5rem, 9vw, 7.5rem); }
 .articles h3 { font: 400 1.7rem/1.1 var(--display); }
 .articles p { color: var(--ink-2); font-size: .95rem; }
 @media (max-width: 900px) { .articles { grid-template-columns: 1fr; } .articles article, .articles article + article { padding: 1.6rem 0; border-left: 0; border-bottom: 1px solid var(--rule-2); } }
-.qa { margin-top: 3.5rem; border-top: 1px solid var(--rule-3); max-width: 60rem; }
+.qa { margin-top: 3.5rem; border-top: 1px solid var(--rule-3); max-width: 62rem; }
 .qa details { border-bottom: 1px solid var(--rule-2); }
 .qa summary { cursor: pointer; list-style: none; display: flex; gap: 1rem; align-items: baseline; padding: 1.2rem 2.5rem 1.2rem 0; position: relative; font: 400 1.3rem/1.25 var(--display); }
 .qa summary::-webkit-details-marker { display: none; }
@@ -179,25 +205,23 @@ section.block { padding-block: clamp(4.5rem, 9vw, 7.5rem); }
 .qa i { font: 500 .74rem var(--mono); color: var(--ir); font-style: normal; }
 .qa p { padding: 0 2.5rem 1.4rem 2.2rem; color: var(--ink-2); }
 
-/* Dialog */
-dialog { border: 0; padding: 0; max-width: min(720px, calc(100vw - 32px)); width: 100%; color: var(--ink); background: transparent; }
+dialog { border: 0; padding: 0; max-width: min(760px, calc(100vw - 32px)); width: 100%; color: var(--ink); background: transparent; }
 dialog::backdrop { background: rgba(2, 4, 10, 0.72); backdrop-filter: blur(6px); }
 dialog[open] .card { animation: pop .38s var(--ease-soft) both; }
 @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.985); } }
-dialog .card { padding: 22px; background: rgba(12, 16, 30, 0.96); }
+dialog .card { padding: 22px; background: rgba(12, 16, 30, 0.96); max-height: calc(100vh - 48px); overflow: auto; }
 dialog header { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
 dialog h3 { font: 400 2rem/1.05 var(--display); margin-top: .3rem; }
-dialog .close { border: 0; background: rgba(255,255,255,.06); width: 34px; height: 34px; border-radius: 10px; cursor: pointer; font-size: 1.1rem; }
-dialog .strip-st { display: flex; gap: 8px; overflow-x: auto; margin: 1rem 0; }
-dialog .strip-st figure { margin: 0; flex: none; text-align: center; }
-dialog .strip-st canvas { width: 96px; height: 96px; image-rendering: pixelated; border-radius: 8px; box-shadow: 0 0 0 .5px var(--rule-2); }
-dialog figcaption { font: 500 .6rem var(--mono); color: var(--ink-3); margin-top: .3rem; }
+dialog .close { border: 0; background: rgba(255,255,255,.06); width: 34px; height: 34px; border-radius: 10px; cursor: pointer; font-size: 1.1rem; flex: none; }
+.vote { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
+
+.skeleton { color: transparent !important; background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.09), rgba(255,255,255,.04)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: 8px; }
+@keyframes shimmer { to { background-position: -200% 0; } }
 
 footer { border-top: 1px solid var(--rule); padding-block: 2.2rem 3rem; font-size: .84rem; color: var(--ink-3); }
 footer .wrap { display: grid; gap: .6rem; }
 footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline-offset: 3px; }
 
-/* Scroll reveal, progressive enhancement */
 @supports (animation-timeline: view()) {
   .reveal { animation: reveal linear both; animation-timeline: view(); animation-range: entry 0% cover 22%; }
   @keyframes reveal { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
@@ -215,7 +239,7 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
       SPHEREx Moving Sky
     </a>
     <nav aria-label="Sections">
-      <a href="#blink">Blink</a><a href="#tracks">Tracks</a><a href="#spectra">Spectra</a><a href="#proof">Proof</a><a href="#method">Method</a>
+      <a href="#blink">Blink</a><a href="#planetx">Planet X</a><a href="#tracks">Tracks</a><a href="#spectra">Spectra</a><a href="#live">Live</a><a href="#proof">Proof</a><a href="#method">Method</a>
     </nav>
   </div>
 </header>
@@ -226,12 +250,14 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
     <div class="wrap hero-inner">
       <span class="label">NASA Space Apps 2026 · Planet X &amp; SPHEREx</span>
       <h1>Something up there <em>is moving.</em></h1>
-      <p class="lede">NASA's SPHEREx telescope photographs the whole sky in 102 infrared colours every six months. We search its images for things that move between exposures, and then grade ourselves against every known asteroid in JPL's catalogue.</p>
+      <p class="lede">NASA's SPHEREx telescope photographs the whole sky in 102 infrared colours every six months. This tool searches its images for things that move, from fast main-belt asteroids to slow, distant Planet-X-class worlds, and grades every result against JPL's catalogue.</p>
       <div class="cta">
         <a class="btn press" href="#blink">Blink the sky</a>
-        <a class="btn ghost press" href="#proof">How we know it works</a>
+        <a class="btn ghost press" href="#planetx">Planet X mode</a>
+        <a class="btn ghost press" href="#live">Query NASA live</a>
       </div>
-      <dl class="facts" id="facts"></dl>
+      <!--facts:start--><dl class="facts" id="facts"><div><dt>Fields searched</dt><dd class="skeleton">00</dd></div><div><dt>JPL predictions checked</dt><dd class="skeleton">0000</dd></div><div><dt>Bright asteroids recovered</dt><dd class="skeleton">00%</dd></div><div><dt>Unidentified vs. chance</dt><dd class="skeleton">0</dd></div></dl><!--facts:end-->
+      <noscript><p class="lede" style="margin-top:1rem">This page needs JavaScript for the interactive viewer. The numbers above are measured; the full method is on GitHub.</p></noscript>
     </div>
   </section>
   <div class="micro" aria-hidden="true"><span id="micro"></span></div>
@@ -242,7 +268,7 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
         <span class="num">01</span>
         <span class="label">Blink comparator, rebuilt for SPHEREx</span>
         <h2>Same sky, <em>hours apart.</em></h2>
-        <p class="lede">Each frame is a separate SPHEREx exposure, resampled onto one patch of sky. Stars hold still. Solar-system objects hop. Drag to pan, scroll or pinch to zoom, tap any marker for its story.</p>
+        <p class="lede">Each frame is a separate SPHEREx exposure, resampled onto one patch of sky. Stars hold still. Solar-system objects hop. Drag to pan, scroll or pinch to zoom, adjust the stretch for faint movers, and tap any marker to vet it.</p>
       </div>
       <div class="plates" id="plates" role="group" aria-label="Survey fields"></div>
       <div class="strip" id="strip"></div>
@@ -251,7 +277,7 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
           <div class="stage" id="stage">
             <canvas id="view" aria-label="SPHEREx image of the selected field"></canvas>
             <div class="hud"><span id="hudL"></span><span id="hudR" class="rec"></span></div>
-            <div class="hint" id="hint">drag · scroll to zoom · tap a marker</div>
+            <div class="hint">drag · scroll to zoom · tap a marker</div>
             <div class="zoombtns"><button class="press" id="zin" aria-label="Zoom in">+</button><button class="press" id="zout" aria-label="Zoom out">−</button><button class="press" id="zfit" aria-label="Reset view">◎</button></div>
           </div>
           <div class="controls">
@@ -259,12 +285,26 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
             <input id="frame" type="range" min="0" value="0" step="1" aria-label="Exposure">
             <span class="when" id="when"></span>
           </div>
+          <div class="vetstrip surface" id="vetstrip" hidden>
+            <span class="label" id="vetTitle">Vetting stamps</span>
+            <div class="row" id="vetRow"></div>
+            <p class="muted small">Left of each pair: this visit, centred on the detection. Right: the median of every <em>other</em> visit at the same sky spot. A real mover is bright on the left and gone on the right; a star is in both. Detector pixel coordinates are shown so a defect riding the pointing would be obvious.</p>
+          </div>
         </div>
         <aside class="side surface">
           <span class="label">Overlays</span>
           <label class="toggle"><input type="checkbox" id="oPred" checked><span class="dot" style="background:var(--pred)"></span>JPL predictions</label>
           <label class="toggle"><input type="checkbox" id="oKnown" checked><span class="dot" style="background:var(--known)"></span>Our tracks: known</label>
           <label class="toggle"><input type="checkbox" id="oCand" checked><span class="dot" style="background:var(--cand)"></span>Our tracks: unidentified</label>
+          <label class="toggle"><input type="checkbox" id="oRej"><span class="dot" style="background:var(--bad)"></span>Rejected detector artifacts</label>
+          <span class="label" style="margin-top:6px">Stretch</span>
+          <div class="segmented" role="group" aria-label="Image stretch" id="stretchMode">
+            <button data-s="asinh" aria-pressed="true">Asinh</button><button data-s="linear">Linear</button><button data-s="faint">Faint</button><button data-s="zscale">Z-scale</button>
+          </div>
+          <div class="stretch">
+            <span>black</span><input type="range" id="sBlack" min="0" max="200" value="0" aria-label="Black point">
+            <span>white</span><input type="range" id="sWhite" min="40" max="255" value="255" aria-label="White point">
+          </div>
           <span class="label" style="margin-top:6px">This field</span>
           <dl class="kv" id="fieldKv"></dl>
         </aside>
@@ -272,63 +312,111 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
     </div>
   </section>
 
-  <section class="block" id="tracks" style="padding-top:0">
+  <section class="block tight" id="planetx">
     <div class="wrap">
       <div class="head reveal">
         <span class="num">02</span>
-        <span class="label">Found blind, then identified</span>
-        <h2>The tracks <em>ledger.</em></h2>
-        <p class="lede">Every track our detector linked across three or more visits, with no catalogue hints. Afterwards each one is checked against JPL. Matches score the detector; anything unmatched is weighed against the false-alarm rate.</p>
+        <span class="label">Planet X mode</span>
+        <h2>Slow, distant, <em>and still found.</em></h2>
+        <p class="lede">A Planet X at hundreds of au barely moves: well under three arcseconds an hour. We search a whole week of visits for those crawlers, using a different trick: an uncatalogued source that is missing from the median of the other visits at the same spot. We test it on the real thing, a dwarf planet 50 au away, and plant synthetic worlds in the same real images, drawn with SPHEREx's own PSF, to measure how faint a Planet X could be.</p>
       </div>
-      <ul class="ledger reveal" id="ledger"></ul>
+      <div class="px-grid" id="pxGrid"><div class="panel surface"><p class="muted">Loading Planet X results…</p></div></div>
     </div>
   </section>
 
-  <section class="block" id="spectra" style="padding-top:0">
+  <section class="block tight" id="tracks">
     <div class="wrap">
       <div class="head reveal">
         <span class="num">03</span>
+        <span class="label">Found blind, then identified</span>
+        <h2>The tracks <em>ledger.</em></h2>
+        <p class="lede">Every track the detector linked in this field, with no catalogue hints. Each is then checked against JPL. Tracks that reuse one detector pixel across visits are rejected as defects riding the pointing, and listed below, not hidden.</p>
+      </div>
+      <ul class="ledger reveal" id="ledger"><li class="empty skeleton">loading</li></ul>
+      <details class="artifacts" id="artifacts" hidden><summary></summary><ul class="ledger" id="artList"></ul></details>
+    </div>
+  </section>
+
+  <section class="block tight" id="spectra">
+    <div class="wrap">
+      <div class="head reveal">
+        <span class="num">04</span>
         <span class="label">Only SPHEREx can do this</span>
         <h2>A spectrum for <em>every rock.</em></h2>
-        <p class="lede">SPHEREx has no filter wheel: each detector row sees a different wavelength, and each visit nudges the sky across those rows. So a passing asteroid leaves behind a spectrum from 0.75 to 5 µm. Rocky and carbon-rich asteroids reflect sunlight differently, and the longest wavelengths start to catch their heat.</p>
+        <p class="lede">SPHEREx has no filter wheel: each detector row sees a different wavelength, and every visit nudges the sky across those rows. A passing asteroid leaves 15 to 40 spectral points from 0.75 to 5 µm. We fit reflected sunlight with a slope, plus heat at the temperature its real distance from the Sun implies, and compare the slope with JPL's published class and albedo.</p>
       </div>
       <div class="specs" id="specs"></div>
     </div>
   </section>
 
-  <section class="block" id="proof" style="padding-top:0">
+  <section class="block tight" id="live">
     <div class="wrap">
       <div class="head reveal">
-        <span class="num">04</span>
+        <span class="num">05</span>
+        <span class="label">Not a recording</span>
+        <h2>Query NASA, <em>live.</em></h2>
+        <p class="lede">Pick any sky position. Our serverless function asks IRSA which SPHEREx exposures cover it, then reads just the pixels you need from the 69 MB file with HTTP range requests, while you watch the byte log. Ask JPL which known asteroids should be there, or where any named body was at that moment, as seen from SPHEREx.</p>
+      </div>
+      <div class="live">
+        <div class="panel surface">
+          <div class="liveform">
+            <label class="field"><span class="label">RA (deg)</span><input id="lRa" inputmode="decimal" value="179.8304"></label>
+            <label class="field"><span class="label">Dec (deg)</span><input id="lDec" inputmode="decimal" value="1.1069"></label>
+            <button class="btn sm press" id="lFind">Find exposures</button>
+          </div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem">
+            <button class="btn ghost sm press" id="lExample">Example: 872 Holda, May 2025</button>
+            <button class="btn ghost sm press" id="lHere">Use this field's centre</button>
+          </div>
+          <div class="exps" id="lExps"></div>
+        </div>
+        <div class="panel surface">
+          <div class="livecut"><canvas id="lCut" aria-label="Live SPHEREx cutout"></canvas></div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem;align-items:end">
+            <button class="btn ghost sm press" id="lKnown" disabled>Mark known asteroids (JPL)</button>
+            <label class="field" style="flex:1;min-width:9rem"><span class="label">Where is… (name or number)</span><input id="lName" placeholder="872, Ceres, 2004 MN4"></label>
+            <button class="btn ghost sm press" id="lWhere" disabled>Locate</button>
+          </div>
+          <div class="console" id="lLog" aria-live="polite"><span class="dim">// network log: every request this panel makes, with its byte range and timing</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block tight" id="proof">
+    <div class="wrap">
+      <div class="head reveal">
+        <span class="num">06</span>
         <span class="label">Graded against JPL</span>
         <h2>How we know <em>it works.</em></h2>
-        <p class="lede">We predict where every known asteroid should be, from SPHEREx's own position in orbit, then measure. And we measure how many fake tracks pure noise would produce, so nothing here can fool us.</p>
+        <p class="lede">We predict where every known asteroid should be, from SPHEREx's own position in orbit, then measure. We scramble our own detections to see how many fake tracks noise makes, and reject tracks that sit on one detector pixel, so neither noise nor hardware can fool us.</p>
       </div>
       <div class="proof">
         <div class="panel surface reveal"><span class="label">Detection completeness, all fields</span><h3>How faint can one exposure see?</h3><div id="chart"></div></div>
-        <div class="panel surface reveal"><span class="label">The honesty check</span><h3>Real tracks vs. what chance would make</h3><div class="meter" id="meter"></div><p class="muted" style="margin-top:1rem;font-size:.86rem" id="meterNote"></p></div>
+        <div class="panel surface reveal"><span class="label">The honesty check</span><h3>Real tracks vs. what chance would make</h3><div class="meter" id="meter"></div><p class="muted small" style="margin-top:1rem" id="meterNote"></p></div>
       </div>
       <div class="pairs" id="pairs"></div>
     </div>
   </section>
 
-  <section class="block" id="method" style="padding-top:0">
+  <section class="block tight" id="method">
     <div class="wrap">
       <div class="head reveal">
-        <span class="num">05</span>
+        <span class="num">07</span>
         <span class="label">Method</span>
         <h2>Three ideas, <em>no magic.</em></h2>
       </div>
       <div class="articles reveal">
-        <article><span class="n">i.</span><h3>Read only what we need</h3><p>Each SPHEREx image is 69 MB. We read headers, then fetch just the pixel rows around our targets with HTTP range requests: a few kilobytes per asteroid, straight from NASA's IRSA archive.</p></article>
-        <article><span class="n">ii.</span><h3>Let the pipeline point</h3><p>SPHEREx's own processing flags pixels that disagree with overlapping exposures. Moving objects trip that flag. We seed on it, skip catalogued stars, and link seeds that line up in straight-line motion across three or more visits.</p></article>
-        <article><span class="n">iii.</span><h3>Grade everything</h3><p>JPL predicts every known asteroid as seen from SPHEREx's orbit. We measure each one, report completeness by brightness, and scramble our own detections to measure the false-alarm rate.</p></article>
+        <article><span class="n">i.</span><h3>Read only what we need</h3><p>Each SPHEREx image is 69 MB. We read headers, then fetch just the pixel rows around our targets with HTTP range requests: kilobytes per asteroid, straight from NASA's IRSA archive. Section 05 does the same thing live, in front of you.</p></article>
+        <article><span class="n">ii.</span><h3>Two searches, two speeds</h3><p>Fast movers trip SPHEREx's own outlier flags; we seed on them and link straight-line motion across three or more visits in about 2.6 days. Slow movers do not, so we seed on uncatalogued sources missing from the other visits' median and link across a week.</p></article>
+        <article><span class="n">iii.</span><h3>Grade everything</h3><p>JPL predicts every known body as seen from SPHEREx's orbit. We report completeness by brightness, scramble detections for the chance rate, reject detector-fixed tracks, and plant synthetic movers with the real PSF to measure depth.</p></article>
       </div>
       <div class="qa reveal">
-        <details name="qa"><summary><i>Q1</i>Why not just subtract one image from another?</summary><p>Because SPHEREx sees a different wavelength in every detector row, the same star changes brightness between exposures. Straight subtraction leaves a sky full of false residuals. Outlier flags plus multi-visit linking avoid that.</p></details>
-        <details name="qa"><summary><i>Q2</i>Did you discover a new object?</summary><p>Not yet, and we can prove it. Any unmatched track is compared with the number of tracks noise alone produces when we scramble the detections. A real discovery has to beat that rate, then get follow-up and a Minor Planet Center report.</p></details>
-        <details name="qa"><summary><i>Q3</i>What about Planet X?</summary><p>Distant worlds move under two arcseconds per hour, too slowly to separate from drifting stars within a few days. SPHEREx returns to every field each six months; linking those revisits is how a search for slow, distant movers would work, and it is our next step.</p></details>
-        <details name="qa"><summary><i>Q4</i>How accurate are the spectra?</summary><p>Wavelengths come straight from SPHEREx's per-pixel calibration table. Fluxes use a fixed aperture with no PSF correction yet, so the longest wavelengths read somewhat low, and an asteroid's spin can change its brightness between visits. Shapes are indicative, not publication-grade.</p></details>
+        <details name="qa"><summary><i>Q1</i>Why not just subtract one image from another?</summary><p>Because SPHEREx sees a different wavelength in every detector row, the same star changes brightness between exposures. Straight subtraction leaves a sky full of false residuals. Outlier flags, multi-visit medians and motion linking avoid that.</p></details>
+        <details name="qa"><summary><i>Q2</i>Did you discover a new object?</summary><p>Not yet, and we can prove it. Every unidentified track is compared with the number noise alone produces when we scramble our detections, and rejected if it reuses one detector pixel. A real discovery has to beat that, then get follow-up and a Minor Planet Center report.</p></details>
+        <details name="qa"><summary><i>Q3</i>How does Planet X mode work, and what can it see?</summary><p>Over a week a body at 50 to 500 au moves 8 to 55 pixels, enough to link. Within a pass, not across six months: half a year of Earth's own orbit shifts a distant object by degrees, which needs an orbit search. Section 02 shows the real dwarf-planet test and the measured depth for synthetic Planet-X-like movers.</p></details>
+        <details name="qa"><summary><i>Q4</i>Doesn't the PSF grow with wavelength and fake the spectrum?</summary><p>We measured it with SPHEREx's own PSF, stored in every file for 121 detector zones: a 3-pixel aperture holds more than 99.6% of the light at every wavelength from 0.9 to 4.7 µm, because SPHEREx's 6.15″ pixels dominate the blur. We still apply that per-zone correction to every point. Spin is real: points from different visits carry a ±0.15 mag rotation term in the fit.</p></details>
+        <details name="qa"><summary><i>Q5</i>How do you know the spectra mean anything?</summary><p>Across nine asteroids, our fitted red slope rises with JPL's published albedo (Spearman ρ = 0.68, permutation p ≈ 0.05): dark, primitive asteroids come out flat; bright S-types come out red. We never used JPL's classes to fit; they are only shown for comparison.</p></details>
       </div>
     </div>
   </section>
@@ -337,8 +425,8 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
 <footer>
   <div class="wrap">
     <span class="label">Data &amp; credits</span>
-    <p>SPHEREx Quick Release 2, NASA/IPAC Infrared Science Archive (<a href="https://doi.org/10.26131/IRSA652">DOI 10.26131/IRSA652</a>). Ephemerides from JPL Horizons and the JPL Small-Body Identification API. Built for the NASA Space Apps Challenge 2026. Source on <a href="https://github.com/shrestha-droid/spherex-moving-sky">GitHub</a>.</p>
-    <p>Unidentified tracks are candidates, never discoveries.</p>
+    <p>SPHEREx Quick Release 2, NASA/IPAC Infrared Science Archive (<a href="https://doi.org/10.26131/IRSA652">DOI 10.26131/IRSA652</a>). Ephemerides from JPL Horizons, the JPL Small-Body Identification API and JPL SBDB. Built for the NASA Space Apps Challenge 2026. Source on <a href="https://github.com/shrestha-droid/spherex-moving-sky">GitHub</a>.</p>
+    <p>Unidentified tracks are candidates, never discoveries. Synthetic movers in Planet X mode are always labelled.</p>
   </div>
 </footer>
 
@@ -348,8 +436,10 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
 const $ = id => document.getElementById(id);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mjdDate = m => new Date((m - 40587) * 864e5).toISOString().slice(0, 16).replace('T', ' ');
-const COLORS = { known: '#4fd8ff', cand: '#ffb547', pred: 'rgba(141,151,181,.85)', ir: '#ff6b4a' };
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const mjdIso = m => new Date((m - 40587) * 864e5).toISOString().slice(0, 22) + 'Z';
+const COLORS = { known: '#4fd8ff', cand: '#ffb547', pred: 'rgba(141,151,181,.85)', ir: '#ff6b4a', bad: '#ff5d73' };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
 
 /* ---------- Live sky (hero) ---------- */
 (function sky() {
@@ -369,7 +459,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
       const z = Math.pow(Math.random(), 2.4);
       return { x: Math.random() * w, y: Math.random() * h, z, r: .35 + z * 1.5, warm: Math.random() < .35, ph: Math.random() * 7, rt: .6 + Math.random() * 1.8 };
     });
-    mover = { x: w * .62, y: h * .32, vx: 9, vy: 3.5, trail: [] };
+    mover = { x: w * .62, y: h * .32, vx: 9, vy: 3.5, trail: [{ x: w * .62, y: h * .32 }] };
   }
   addEventListener('resize', resize); resize();
   addEventListener('pointermove', e => { ptr.x = e.clientX / innerWidth - .5; ptr.y = e.clientY / innerHeight - .5; }, { passive: true });
@@ -393,19 +483,20 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
           g.beginPath(); g.moveTo(px - L, py); g.lineTo(px + L, py); g.moveTo(px, py - L); g.lineTo(px, py + L); g.stroke(); g.globalAlpha = 1;
         }
       }
-      // the mover: an asteroid hopping between "exposures", with a reticle that locks on
       if (!reduce) { mover.x += mover.vx * dt; mover.y += mover.vy * dt; if (mover.x > w + 40) { mover.x = -40; mover.y = h * (.2 + Math.random() * .4); mover.trail = []; } }
       const hop = Math.floor(T / 1.4);
       if (hop !== mover.hop) { mover.hop = hop; mover.trail.push({ x: mover.x, y: mover.y }); if (mover.trail.length > 4) mover.trail.shift(); lock = 1; }
       lock = Math.max(0, lock - dt * .9);
       const ox = -sm.x * 30, oy = -sm.y * 30;
-      g.strokeStyle = 'rgba(79,216,255,.55)'; g.setLineDash([3, 5]); g.lineWidth = 1;
-      g.beginPath(); mover.trail.forEach((p, i) => g[i ? 'lineTo' : 'moveTo'](p.x + ox, p.y + oy)); g.stroke(); g.setLineDash([]);
-      mover.trail.forEach((p, i) => { g.fillStyle = `rgba(79,216,255,${.25 + i * .15})`; g.beginPath(); g.arc(p.x + ox, p.y + oy, 2, 0, 7); g.fill(); });
-      const mx = mover.trail.at(-1).x + ox, my = mover.trail.at(-1).y + oy, rr = 16 + lock * 14;
-      g.strokeStyle = `rgba(255,107,74,${.5 + lock * .5})`; g.lineWidth = 1.2;
-      for (let k = 0; k < 4; k++) { const a0 = k * Math.PI / 2 + .3; g.beginPath(); g.arc(mx, my, rr, a0, a0 + .9); g.stroke(); }
-      g.fillStyle = 'rgba(255,107,74,.9)'; g.font = '500 10px "IBM Plex Mono", monospace'; g.fillText('MOVER · LOCKED', mx + rr + 6, my - rr + 4);
+      if (mover.trail.length) {
+        g.strokeStyle = 'rgba(79,216,255,.55)'; g.setLineDash([3, 5]); g.lineWidth = 1;
+        g.beginPath(); mover.trail.forEach((p, i) => g[i ? 'lineTo' : 'moveTo'](p.x + ox, p.y + oy)); g.stroke(); g.setLineDash([]);
+        mover.trail.forEach((p, i) => { g.fillStyle = `rgba(79,216,255,${.25 + i * .15})`; g.beginPath(); g.arc(p.x + ox, p.y + oy, 2, 0, 7); g.fill(); });
+        const mx = mover.trail.at(-1).x + ox, my = mover.trail.at(-1).y + oy, rr = 16 + lock * 14;
+        g.strokeStyle = `rgba(255,107,74,${.5 + lock * .5})`; g.lineWidth = 1.2;
+        for (let k = 0; k < 4; k++) { const a0 = k * Math.PI / 2 + .3; g.beginPath(); g.arc(mx, my, rr, a0, a0 + .9); g.stroke(); }
+        g.fillStyle = 'rgba(255,107,74,.9)'; g.font = '500 10px "IBM Plex Mono", monospace'; g.fillText('MOVER · LOCKED', mx + rr + 6, my - rr + 4);
+      }
     }
     requestAnimationFrame(frame);
   }
@@ -414,77 +505,86 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 /* ---------- Data ---------- */
 async function getJSON(u) { try { const r = await fetch(u); return r.ok ? await r.json() : null; } catch { return null; } }
-let SURVEY, FIELDS = [], cur = null, cache = {};
+let SURVEY, PX = [], FIELDS = [], cur = null, cache = {};
 
 async function boot() {
-  SURVEY = await getJSON('survey.json');
-  if (SURVEY && SURVEY.fields?.length) FIELDS = SURVEY.fields.filter(f => !f.skipped && f.summary);
-  if (!FIELDS.length) FIELDS = [{ id: 'legacy', base: '', legacy: true }];
+  [SURVEY, PX] = await Promise.all([getJSON('survey.json'), getJSON('planetx.json')]);
+  PX = (PX || []).filter(p => !p.skipped);
+  if (SURVEY?.fields?.length) FIELDS = SURVEY.fields.filter(f => !f.skipped && f.summary);
   FIELDS.forEach(f => f.base ??= `fields/${f.id}/`);
-  // lead with the field that has the most blind finds, then the most spectra
   FIELDS.sort((a, b) => ((b.found?.length || 0) - (a.found?.length || 0)) || ((b.spectra?.length || 0) - (a.spectra?.length || 0)));
+  PX.forEach(p => { p.px = true; p.base = p.dir; p.jplId = p.id; p.id = 'px-' + p.name; });
+  if (!FIELDS.length && !PX.length) FIELDS = [{ id: 'legacy', base: '', legacy: true }];
   renderPlates(); renderStrip();
-  await selectField(FIELDS[0]);
-  renderFacts(); renderProof();
+  await selectField(FIELDS[0] || PX[0]);
+  renderFacts(); renderProof(); renderPlanetX();
 }
 
 async function loadField(f) {
   if (cache[f.id]) return cache[f.id];
-  const [rec, det, spec] = await Promise.all(['recovery.json', 'detections.json', 'spectra.json'].map(n => getJSON(f.base + n)));
-  return cache[f.id] = { rec, det, spec: spec || [] };
+  const names = f.px ? ['detections.json'] : ['recovery.json', 'detections.json', 'spectra.json'];
+  const got = await Promise.all(names.map(n => getJSON(f.base + n)));
+  const d = f.px ? { det: got[0], rec: null, spec: [] } : { rec: got[0], det: got[1], spec: got[2] || [] };
+  return cache[f.id] = d;
 }
 
 /* ---------- Hero facts + microprint ---------- */
 function renderFacts() {
-  const C = SURVEY?.combined, d = cache[cur.id];
-  const recBright = (C ? C.completeness : d.rec.summary).filter(b => /V<15|15-16|16-17/.test(b.label));
-  const n = recBright.reduce((s, b) => s + b.n, 0), r = recBright.reduce((s, b) => s + b.recovered, 0);
+  const C = SURVEY?.combined; if (!C) return;
+  const bright = C.completeness.filter(b => /V<15|15-16|16-17/.test(b.label));
+  const n = bright.reduce((s, b) => s + b.n, 0), r = bright.reduce((s, b) => s + b.recovered, 0);
   const facts = [
-    ['Fields searched', C ? C.fields : 1, C ? `${C.area_deg2} deg²` : ''],
-    ['JPL predictions checked', C ? C.predicted : d.rec.results.length, ''],
+    ['Fields searched', C.fields, `${C.area_deg2} deg²`],
+    ['JPL predictions checked', C.predicted.toLocaleString('en'), ''],
     ['Bright asteroids recovered', `${n ? Math.round(100 * r / n) : 0}%`, `${r}/${n} · V<17`],
-    ['Unidentified vs. chance', `${C ? C.candidates : d.det.score.candidates}`, `vs ${C ? C.false_alarms : d.det.score.false_alarms} expected`],
+    ['Unidentified vs. chance', C.candidates, `vs ${C.false_alarms} expected`],
   ];
   $('facts').innerHTML = facts.map(([k, v, s]) => `<div><dt>${k}</dt><dd>${v}${s ? `<small>${s}</small>` : ''}</dd></div>`).join('');
-  const ids = Object.values(cache).flatMap(x => x.rec?.visits?.map(v => v.id) || []);
-  const t = (ids.length ? ids : ['SPHEREX']).map(i => `${i} ·`).join(' ') + ' ';
+}
+function renderMicro() {
+  const ids = Object.values(cache).flatMap(x => x.det?.frames?.map(v => v.id) || []);
+  const t = (ids.length ? ids : ['SPHEREX QR2']).map(i => `${i} ·`).join(' ') + ' ';
   $('micro').textContent = (t + ' ').repeat(Math.max(2, Math.ceil(400 / t.length)));
 }
 
 /* ---------- Field plates + sky strip ---------- */
-const fieldName = f => f.legacy ? 'Field RA 180°' : `RA ${f.ra}° · Dec ${f.dec > 0 ? '+' : ''}${f.dec}°`;
+const fieldName = f => f.px ? `${f.name}` : f.legacy ? 'Field RA 180°' : `RA ${f.ra}° · Dec ${f.dec > 0 ? '+' : ''}${f.dec}°`;
+function allPlates() { return [...FIELDS, ...PX]; }
 function renderPlates() {
-  $('plates').innerHTML = FIELDS.map((f, i) => `<button class="plate press" data-i="${i}" aria-pressed="false">
-    <span class="serial">PLATE ${String(i + 1).padStart(2, '0')}</span><b>${fieldName(f)}</b>
-    <span class="k">${f.start_mjd ? mjdDate(f.start_mjd).slice(0, 10) : 'May 2025'} · ${f.found ? f.found.length + ' found' : ''}${f.spectra?.length ? ' · ' + f.spectra.length + ' spectra' : ''}</span></button>`).join('');
-  $('plates').onclick = e => { const b = e.target.closest('.plate'); if (b) selectField(FIELDS[+b.dataset.i]); };
+  $('plates').innerHTML = allPlates().map((f, i) => f.px
+    ? `<button class="plate px press" data-i="${i}" aria-pressed="false"><span class="serial" style="color:var(--cand)">PLANET X MODE</span><b>${esc(f.name)}</b><span class="k">${f.target?.r_au ?? '?'} au · ${f.target?.motion_arcsec_h ?? '?'}″/h · ${f.visits} visits</span></button>`
+    : `<button class="plate press" data-i="${i}" aria-pressed="false"><span class="serial">PLATE ${String(i + 1).padStart(2, '0')}</span><b>${fieldName(f)}</b>
+      <span class="k">${f.start_mjd ? mjdDate(f.start_mjd).slice(0, 10) : 'May 2025'} · ${f.found ? f.found.length + ' found' : ''}${f.spectra?.length ? ' · ' + f.spectra.length + ' spectra' : ''}</span></button>`).join('');
+  $('plates').onclick = e => { const b = e.target.closest('.plate'); if (b) selectField(allPlates()[+b.dataset.i]); };
 }
 function renderStrip() {
   const fs = FIELDS.filter(f => f.ra != null); if (!fs.length) return;
   const W = 1000, H = 120, ra0 = 145, ra1 = 215, x = ra => (ra1 - ra) / (ra1 - ra0) * W, y = d => H / 2 - d * 3.4;
   const ecl = Array.from({ length: 71 }, (_, i) => { const ra = ra0 + i; const d = Math.atan(Math.tan(23.44 * Math.PI / 180) * Math.sin(ra * Math.PI / 180)) * 180 / Math.PI; return `${x(ra)},${y(d)}`; }).join(' ');
-  const boxes = fs.map(f => { const i = FIELDS.indexOf(f), bx = f.box || [f.ra, f.dec, .6], s = bx[2] * 3.4 * 4;
+  const boxes = fs.map(f => { const i = allPlates().indexOf(f), bx = f.box || [f.ra, f.dec, .6], s = bx[2] * 3.4 * 4;
     return `<g class="sf" data-i="${i}" style="cursor:pointer"><rect x="${x(bx[0]) - s / 2}" y="${y(bx[1]) - s / 2}" width="${s}" height="${s}" fill="rgba(255,107,74,.08)" stroke="${f.found?.length ? '#4fd8ff' : 'rgba(190,205,255,.4)'}" rx="3"/>
       <text x="${x(bx[0])}" y="${y(bx[1]) + s / 2 + 12}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="middle">${String(i + 1).padStart(2, '0')}·P${f.pass}</text></g>`; }).join('');
   $('strip').innerHTML = `<svg viewBox="0 0 ${W} ${H + 14}" role="img" aria-label="Survey fields along the ecliptic">
     <polyline points="${ecl}" fill="none" stroke="rgba(255,181,71,.35)" stroke-dasharray="4 6"/>
     <text x="6" y="${y(Math.atan(Math.tan(.409) * Math.sin(ra1 * Math.PI / 180)) * 180 / Math.PI) - 6}" fill="rgba(255,181,71,.6)" font-size="10" font-family="IBM Plex Mono">ECLIPTIC</text>
     ${boxes}<text x="${W - 4}" y="12" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="end">← RA increases</text></svg>`;
-  $('strip').onclick = e => { const g = e.target.closest('.sf'); if (g) selectField(FIELDS[+g.dataset.i]); };
+  $('strip').onclick = e => { const g = e.target.closest('.sf'); if (g) selectField(allPlates()[+g.dataset.i]); };
 }
 
 async function selectField(f) {
+  if (!f) return;
   const go = async () => {
     cur = f; const d = await loadField(f);
-    [...$('plates').children].forEach((b, i) => b.setAttribute('aria-pressed', FIELDS[i] === f));
-    viewer.load(d); renderLedger(d); renderSpectra(d); renderPairs(d); renderKv(f, d);
+    [...$('plates').children].forEach((b, i) => b.setAttribute('aria-pressed', allPlates()[i] === f));
+    viewer.load(d); renderLedger(d); renderSpectra(d); renderPairs(d); renderKv(f, d); renderMicro();
   };
   if (document.startViewTransition && !reduce && cur) await document.startViewTransition(go).finished; else await go();
 }
 function renderKv(f, d) {
   const det = d.det, s = det.score;
-  const rows = [['Visits', det.frames.length], ['First exposure', mjdDate(det.frames[0].mjd).slice(0, 10)], ['Search box', `${det.field.box_deg}° · ${det.field.n}² px`],
-    ['Center', `${det.field.ra.toFixed(2)}, ${det.field.dec.toFixed(2)}`], ['Outlier seeds', s.seeds], ['Tracks', det.tracks.length],
+  const rows = [['Mode', det.field.mode === 'slow' ? `slow · ${det.field.min_rate}–${det.field.max_rate}″/h` : 'fast · asteroids'], ['Visits', det.frames.length],
+    ['First exposure', mjdDate(det.frames[0].mjd).slice(0, 10)], ['Search box', `${det.field.box_deg}° · ${det.field.n}² px`],
+    ['Seeds', s.seeds], ['Tracks', det.tracks.length], ['Rejected artifacts', s.artifacts ?? 0],
     ['Chance tracks expected', s.false_alarms ?? '–'], ['Bright found blind', `${s.expected.filter(n => s.found.includes(n)).length}/${s.expected.length}`]];
   $('fieldKv').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
@@ -492,64 +592,91 @@ function renderKv(f, d) {
 /* ---------- Stamps ---------- */
 function stamp(px, n, mark = true) {
   const c = document.createElement('canvas'); c.width = c.height = n;
+  if (!px) return c;
   const g = c.getContext('2d'), im = g.createImageData(n, n);
   px.forEach((v, i) => im.data.set([v, v * .96, v * .9, 255], i * 4)); g.putImageData(im, 0, 0);
   if (mark) { const m = (n - 1) / 2; g.fillStyle = '#4fd8ff'; for (const [x, y, w, h] of [[m - 4, m, 2, 1], [m + 3, m, 2, 1], [m, m - 4, 1, 2], [m, m + 3, 1, 2]]) g.fillRect(x, y, w, h); }
   return c;
 }
 
+/* ---------- Stretch: re-map the 8-bit frames through a lookup table ---------- */
+const stretch = { mode: 'asinh', black: 0, white: 255 };
+function lut() {
+  const L = new Uint8ClampedArray(256), { mode, black, white } = stretch;
+  for (let v = 0; v < 256; v++) {
+    let u = Math.min(1, Math.max(0, (v - black) / Math.max(1, white - black)));
+    if (mode === 'linear') u = Math.sinh(u * Math.asinh(10)) / 10;          // undo the stored asinh
+    if (mode === 'faint') u = Math.pow(u, .55);
+    if (mode === 'zscale') u = Math.min(1, Math.max(0, (u - .12) / .3));       // hard clip around the sky level
+    L[v] = u * 255;
+  }
+  return L;
+}
+function stretched(img) {
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  if (stretch.mode === 'asinh' && stretch.black === 0 && stretch.white === 255) return c;
+  const d = g.getImageData(0, 0, c.width, c.height), L = lut();
+  for (let i = 0; i < d.data.length; i += 4) { const v = L[d.data[i]]; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; }
+  g.putImageData(d, 0, 0); return c;
+}
+
 /* ---------- Viewer: blink, zoom, pan, pick ---------- */
 const viewer = (() => {
   const c = $('view'), g = c.getContext('2d'), stage = $('stage');
-  let det, imgs = [], k = 0, timer = null, Z = 1, P = { x: 0, y: 0 }, n = 1, hover = null;
-  const size = () => { const r = stage.getBoundingClientRect(), dpr = devicePixelRatio || 1; c.width = r.width * dpr; c.height = r.height * dpr; return r.width; };
-  function base() { return c.width / n; }
-  function toScreen(gx, gy) { const s = base() * Z; return [(gx + .5) * s + P.x, (gy + .5) * s + P.y]; }
+  let det, imgs = [], proc = [], k = 0, timer = null, Z = 1, P = { x: 0, y: 0 }, n = 1, hover = null, sel = null;
+  const size = () => { const r = stage.getBoundingClientRect(), dpr = devicePixelRatio || 1; c.width = r.width * dpr; c.height = r.height * dpr; };
+  const base = () => c.width / n;
+  const toScreen = (gx, gy) => { const s = base() * Z; return [(gx + .5) * s + P.x, (gy + .5) * s + P.y]; };
+  function reprocess() { proc = imgs.map(i => i.complete && i.naturalWidth ? stretched(i) : null); draw(); }
+  function drawTrack(t, col, i, f, dpr, thin) {
+    g.strokeStyle = col; g.lineWidth = (hover === i || sel === i ? 2.6 : thin ? 1 : 1.3) * dpr; g.setLineDash([5 * dpr, 5 * dpr]);
+    g.beginPath(); t.points.forEach((p, j) => { const [x, y] = toScreen(p.gx, p.gy); g[j ? 'lineTo' : 'moveTo'](x, y); }); g.stroke(); g.setLineDash([]);
+    for (const p of t.points) {
+      const [x, y] = toScreen(p.gx, p.gy), here = p.visit === f.id, r = (here ? 15 : 6) * dpr;
+      g.globalAlpha = here ? 1 : .5; g.lineWidth = (here ? 2 : 1) * dpr;
+      if (here) for (let q = 0; q < 4; q++) { const a0 = q * Math.PI / 2 + .35; g.beginPath(); g.arc(x, y, r, a0, a0 + .85); g.stroke(); }
+      else { g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); }
+      g.globalAlpha = 1;
+    }
+  }
   function draw() {
     if (!det) return;
     const f = det.frames[k], s = base() * Z, dpr = devicePixelRatio || 1;
     g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
     g.imageSmoothingEnabled = Z < 2.5;
-    if (imgs[k]?.complete) g.drawImage(imgs[k], P.x, P.y, n * s, n * s);
+    const src = proc[k] || (imgs[k]?.complete ? imgs[k] : null);
+    if (src) g.drawImage(src, P.x, P.y, n * s, n * s);
     if ($('oPred').checked) {
       g.strokeStyle = COLORS.pred; g.lineWidth = 1.2 * dpr;
       for (const a of det.known[f.id] || []) { const [x, y] = toScreen(a.gx, a.gy); g.beginPath(); g.arc(x, y, 9 * dpr, 0, 7); g.stroke(); }
     }
+    if ($('oRej').checked) (det.rejected || []).forEach(t => drawTrack(t, COLORS.bad, -1, f, dpr, true));
     det.tracks.forEach((t, i) => {
       const cand = t.status === 'candidate'; if (cand ? !$('oCand').checked : !$('oKnown').checked) return;
-      const col = cand ? COLORS.cand : COLORS.known;
-      g.strokeStyle = col; g.lineWidth = (hover === i ? 2.4 : 1.3) * dpr; g.setLineDash([5 * dpr, 5 * dpr]);
-      g.beginPath(); t.points.forEach((p, j) => { const [x, y] = toScreen(p.gx, p.gy); g[j ? 'lineTo' : 'moveTo'](x, y); }); g.stroke(); g.setLineDash([]);
-      for (const p of t.points) {
-        const [x, y] = toScreen(p.gx, p.gy), here = p.visit === f.id, r = (here ? 15 : 6) * dpr;
-        g.globalAlpha = here ? 1 : .5; g.lineWidth = (here ? 2 : 1) * dpr;
-        if (here) for (let q = 0; q < 4; q++) { const a0 = q * Math.PI / 2 + .35; g.beginPath(); g.arc(x, y, r, a0, a0 + .85); g.stroke(); }
-        else { g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); }
-        g.globalAlpha = 1;
-      }
+      const col = cand ? COLORS.cand : COLORS.known; drawTrack(t, col, i, f, dpr);
       const lp = t.points.find(p => p.visit === f.id) || t.points.at(-1), [lx, ly] = toScreen(lp.gx, lp.gy);
       g.fillStyle = col; g.font = `500 ${11 * dpr}px "IBM Plex Mono", monospace`; g.fillText((t.known || 'UNIDENTIFIED').split(' (')[0].toUpperCase(), lx + 20 * dpr, ly - 12 * dpr);
     });
-    $('hudL').textContent = `${f.id} · D${det.field.detector}`;
+    $('hudL').textContent = `${f.id} · D${det.field.detector}${det.field.mode === 'slow' ? ' · SLOW MODE' : ''}`;
     $('hudR').textContent = `● EXP ${k + 1}/${det.frames.length}`;
     $('when').textContent = mjdDate(f.mjd) + ' UTC';
     $('frame').value = k;
   }
   function fit() { Z = 1; P = { x: 0, y: 0 }; draw(); }
-  function zoomAt(f, sx, sy) { const nz = Math.min(12, Math.max(1, Z * f)); P.x = sx - (sx - P.x) * nz / Z; P.y = sy - (sy - P.y) * nz / Z; Z = nz; clamp(); draw(); }
   function clamp() { const s = n * base() * Z; P.x = Math.min(0, Math.max(c.width - s, P.x)); P.y = Math.min(0, Math.max(c.height - s, P.y)); }
+  function zoomAt(f, sx, sy) { const nz = Math.min(12, Math.max(1, Z * f)); P.x = sx - (sx - P.x) * nz / Z; P.y = sy - (sy - P.y) * nz / Z; Z = nz; clamp(); draw(); }
   function pick(sx, sy) {
     const dpr = devicePixelRatio || 1, f = det.frames[k]; let best = null, bd = 22 * dpr;
     det.tracks.forEach((t, i) => t.points.forEach(p => { const [x, y] = toScreen(p.gx, p.gy), d = Math.hypot(x - sx, y - sy); if (d < bd) { bd = d; best = { track: i }; } }));
     if (!best && $('oPred').checked) (det.known[f.id] || []).forEach(a => { const [x, y] = toScreen(a.gx, a.gy), d = Math.hypot(x - sx, y - sy); if (d < bd) { bd = d; best = { known: a }; } });
     return best;
   }
-  // pointer: drag to pan, pinch to zoom, tap to pick
   const pts = new Map(); let moved = 0, pinch = 0;
   stage.addEventListener('pointerdown', e => { stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, e); moved = 0; stage.classList.add('drag'); });
   stage.addEventListener('pointermove', e => {
     const dpr = devicePixelRatio || 1, r = c.getBoundingClientRect();
-    if (!pts.has(e.pointerId)) { const h = pick((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr); const nh = h?.track ?? null; if (nh !== hover) { hover = nh; draw(); } stage.style.cursor = h ? 'pointer' : ''; return; }
+    if (!pts.has(e.pointerId)) { if (!det) return; const h = pick((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr); const nh = h?.track ?? null; if (nh !== hover) { hover = nh; draw(); } stage.style.cursor = h ? 'pointer' : ''; return; }
     const prev = pts.get(e.pointerId); pts.set(e.pointerId, e);
     if (pts.size === 2) { const [a, b] = [...pts.values()], d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); if (pinch) zoomAt(d / pinch, ((a.clientX + b.clientX) / 2 - r.left) * dpr, ((a.clientY + b.clientY) / 2 - r.top) * dpr); pinch = d; moved += 10; return; }
     const dx = (e.clientX - prev.clientX) * dpr, dy = (e.clientY - prev.clientY) * dpr; moved += Math.abs(dx) + Math.abs(dy);
@@ -557,7 +684,7 @@ const viewer = (() => {
   });
   const up = e => {
     const r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
-    if (pts.size === 1 && moved < 6) { const h = pick((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr); if (h) openDetail(h); }
+    if (pts.size === 1 && moved < 6 && det) { const h = pick((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr); if (h?.track != null) { select(h.track); openDetail(h); } else if (h) openDetail(h); }
     pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; if (!pts.size) stage.classList.remove('drag');
   };
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', e => { pts.delete(e.pointerId); stage.classList.remove('drag'); });
@@ -566,93 +693,169 @@ const viewer = (() => {
   $('zout').onclick = () => zoomAt(1 / 1.6, c.width / 2, c.height / 2);
   $('zfit').onclick = fit;
   $('frame').oninput = e => { k = +e.target.value; draw(); };
-  ['oPred', 'oKnown', 'oCand'].forEach(id => $(id).onchange = draw);
+  ['oPred', 'oKnown', 'oCand', 'oRej'].forEach(id => $(id).onchange = draw);
+  $('stretchMode').onclick = e => { const b = e.target.closest('button'); if (!b) return; stretch.mode = b.dataset.s; [...$('stretchMode').children].forEach(x => x.setAttribute('aria-pressed', x === b)); reprocess(); };
+  $('sBlack').oninput = e => { stretch.black = +e.target.value; reprocess(); };
+  $('sWhite').oninput = e => { stretch.white = +e.target.value; reprocess(); };
   $('play').onclick = () => {
     const on = !timer; $('play').setAttribute('aria-pressed', on); $('play').textContent = on ? '❚❚ Pause' : '▶ Blink';
     if (on) timer = setInterval(() => { k = (k + 1) % det.frames.length; draw(); }, 650); else { clearInterval(timer); timer = null; }
   };
   addEventListener('resize', () => { size(); clamp(); draw(); });
+  function select(i) { sel = i; renderVetStrip(det, i); draw(); }
   return {
+    select,
     load(d) {
-      det = d.det; n = det.field.n; k = 0; size(); hover = null;
-      imgs = det.frames.map(f => { const i = new Image(); i.onload = draw; i.src = cur.base + f.img; return i; });
+      det = d.det; n = det.field.n; k = 0; size(); hover = null; sel = null;
+      imgs = det.frames.map(f => { const i = new Image(); i.onload = reprocess; i.src = cur.base + f.img; return i; });
+      proc = [];
       $('frame').max = det.frames.length - 1;
-      // open on the most interesting track
       const t = det.tracks.find(t => t.status !== 'candidate') || det.tracks[0];
-      if (t) { const mx = t.points.reduce((s, p) => s + p.gx, 0) / t.points.length, my = t.points.reduce((s, p) => s + p.gy, 0) / t.points.length; Z = 1.8; const s = base() * Z; P.x = c.width / 2 - (mx + .5) * s; P.y = c.height / 2 - (my + .5) * s; clamp(); } else fit();
+      if (t) { const mx = t.points.reduce((s, p) => s + p.gx, 0) / t.points.length, my = t.points.reduce((s, p) => s + p.gy, 0) / t.points.length; Z = 1.8; const s = base() * Z; P.x = c.width / 2 - (mx + .5) * s; P.y = c.height / 2 - (my + .5) * s; clamp(); select(det.tracks.indexOf(t)); } else { fit(); $('vetstrip').hidden = true; }
       draw();
       if (!reduce && !timer) $('play').click();
     },
   };
 })();
 
+function renderVetStrip(det, i) {
+  const t = det.tracks[i]; if (!t) { $('vetstrip').hidden = true; return; }
+  $('vetstrip').hidden = false;
+  $('vetTitle').textContent = `Vetting stamps · ${(t.known || 'Unidentified mover').split(' (')[0]} · ${t.points.length} visits`;
+  const row = $('vetRow'); row.innerHTML = '';
+  t.points.forEach(p => {
+    const fig = document.createElement('figure'), pr = document.createElement('div'); pr.className = 'pair';
+    pr.append(stamp(p.stamp, 21), stamp(p.others, 21, false)); fig.append(pr);
+    fig.insertAdjacentHTML('beforeend', `<figcaption>${mjdDate(p.mjd).slice(5)}<br>SNR ${p.snr} · det (${p.x?.toFixed?.(0) ?? '?'}, ${p.y?.toFixed?.(0) ?? '?'})</figcaption>`);
+    row.append(fig);
+  });
+}
+
 /* ---------- Ledger ---------- */
+function ledgerRow(t, i, rejected) {
+  const li = document.createElement('li'), st = document.createElement('div'); st.className = 'stamps';
+  t.points.forEach(p => st.append(stamp(p.stamp, 21)));
+  const cand = t.status === 'candidate', col = rejected ? 'var(--bad)' : cand ? 'var(--cand)' : 'var(--known)';
+  const verdict = !rejected && store.get(`vet:${cur.id}:${i}`);
+  li.innerHTML = `<div class="t">${rejected ? 'Detector artifact' : esc(t.known || 'Unidentified mover')}<small>${t.points.length} VISITS · ${t.rate}″/H · RESIDUAL ${t.rms}″${t.vmag ? ' · V ' + t.vmag : ''}${verdict ? ' · YOUR VERDICT: ' + esc(verdict).toUpperCase() : ''}</small></div><span class="lead"></span><span class="badge" style="color:${col}">${rejected ? 'same pixel' : cand ? 'unidentified' : 'JPL match'}</span>`;
+  li.prepend(st);
+  if (!rejected) li.onclick = () => { viewer.select(i); openDetail({ track: i }); };
+  return li;
+}
 function renderLedger(d) {
   const L = $('ledger'); L.innerHTML = '';
-  if (!d.det.tracks.length) { L.innerHTML = `<li class="empty">No tracks in this field. With ${d.det.score.false_alarms ?? '?'} chance tracks expected, that is what an honest detector should report.</li>`; return; }
-  d.det.tracks.forEach((t, i) => {
-    const li = document.createElement('li'), st = document.createElement('div'); st.className = 'stamps';
-    t.points.forEach(p => st.append(stamp(p.stamp, 21)));
-    const cand = t.status === 'candidate', col = cand ? 'var(--cand)' : 'var(--known)';
-    li.innerHTML = `<div class="t">${esc(t.known || 'Unidentified mover')}<small>${t.points.length} VISITS · ${t.rate}″/H · RESIDUAL ${t.rms}″${t.vmag ? ' · V ' + t.vmag : ''}</small></div><span class="lead"></span><span class="badge" style="color:${col}">${cand ? 'unidentified' : 'JPL match'}</span>`;
-    li.prepend(st); li.onclick = () => openDetail({ track: i }); L.append(li);
-  });
+  if (!d.det.tracks.length) L.innerHTML = `<li class="empty">No tracks in this field. With ${d.det.score.false_alarms ?? '?'} chance tracks expected, that is what an honest detector should report.</li>`;
+  d.det.tracks.forEach((t, i) => L.append(ledgerRow(t, i)));
+  const rej = d.det.rejected || [];
+  $('artifacts').hidden = !rej.length;
+  if (rej.length) {
+    $('artifacts').querySelector('summary').textContent = `${rej.length} track${rej.length > 1 ? 's' : ''} rejected: same detector pixel in different visits`;
+    $('artList').innerHTML = ''; rej.forEach((t, i) => $('artList').append(ledgerRow(t, i, true)));
+  }
 }
 
 /* ---------- Spectra ---------- */
 const SPEC_MODE = {};
 function sunFnu(um) { const nu = 2.998e14 / um, x = 6.626e-34 * nu / (1.381e-23 * 5778); return nu ** 3 / Math.expm1(x); }
+const VCOL = ['#4fd8ff', '#ffb547', '#5ee6a0', '#c79bff', '#ff8f6b', '#7fb2ff', '#f2e266', '#ff7eb6'];
 function specSVG(sp, mode) {
   const pts = sp.points.filter(p => p.flux > 0); if (pts.length < 2) return '<p class="note">Too few points above the noise for a spectrum.</p>';
-  const W = 520, H = 230, L = 46, R = 12, T = 14, B = 34, lx = Math.log(.7), hx = Math.log(5.2);
+  const W = 520, H = 240, L = 50, R = 12, T = 14, B = 36, lx = Math.log(.7), hx = Math.log(5.2);
   const X = um => L + (Math.log(um) - lx) / (hx - lx) * (W - L - R);
-  let val = p => p.flux, err = p => p.err, ylab = 'flux (µJy)';
-  if (mode === 'refl') {
-    const short = pts.filter(p => p.wave < 1.25), ref = short.length ? short : pts;
-    const k = ref.map(p => p.flux / sunFnu(p.wave)).sort((a, b) => a - b)[Math.floor(ref.length / 2)];
-    val = p => p.flux / sunFnu(p.wave) / k; err = p => p.err / sunFnu(p.wave) / k; ylab = 'reflectance (log, ×1 µm)';
-  }
-  const vs = pts.map(val), es = pts.map(err), log = mode === 'refl';
-  let top = Math.max(...vs.map((v, i) => v + es[i])) * 1.1, bot = Math.min(0, ...vs.map((v, i) => v - es[i]));
+  const rot = 10 ** (0.4 * 0.15) - 1;
+  const short = pts.filter(p => p.wave < 1.25), ref = short.length ? short : pts;
+  const k = ref.map(p => p.flux / sunFnu(p.wave)).sort((a, b) => a - b)[Math.floor(ref.length / 2)];
+  const refl = mode === 'refl', log = refl;
+  const val = refl ? (p => p.flux / sunFnu(p.wave) / k) : (p => p.flux);
+  const err = refl ? (p => p.err / sunFnu(p.wave) / k) : (p => p.err);
+  const vs = pts.map(val), es = pts.map(err);
+  let top = Math.max(...vs.map((v, i) => v + es[i] + v * rot)) * 1.1, bot = Math.min(0, ...vs.map((v, i) => v - es[i]));
   if (log) { top = Math.log10(Math.max(...vs) * 1.6); bot = Math.log10(Math.max(1e-3, Math.min(...vs.filter(v => v > 0)) * .6)); }
   const Y = v => { const u = log ? Math.log10(Math.max(v, 10 ** bot)) : v; return T + (top - u) / (top - bot) * (H - T - B); };
+  const bands = [[.75, 1.11, 'D1'], [1.10, 1.64, 'D2'], [1.63, 2.42, 'D3'], [2.40, 3.82, 'D4'], [3.81, 4.42, 'D5'], [4.41, 5.0, 'D6']];
+  const bandSvg = bands.map(([a, b, n], i) => `<rect x="${X(a)}" y="${T}" width="${X(b) - X(a)}" height="${H - T - B}" fill="rgba(255,255,255,${i % 2 ? .015 : .035})"/><text x="${(X(a) + X(b)) / 2}" y="${H - B + 28}" fill="#5c6683" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">${n}</text>`).join('');
+  const ticks = [.8, 1, 1.5, 2, 3, 4, 5].map(u => `<text x="${X(u)}" y="${H - B + 15}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="middle">${u}</text>`).join('');
   const yt = log ? [.5, 1, 2, 5, 10, 20, 50].filter(t => Math.log10(t) > bot && Math.log10(t) < top)
     .map(t => `<line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" stroke="rgba(190,205,255,.07)"/><text x="${L - 6}" y="${Y(t) + 3}" fill="#7d87a3" font-size="9" font-family="IBM Plex Mono" text-anchor="end">${t}×</text>`).join('') : '';
-  const bands = [[.75, 1.11, 'D1'], [1.10, 1.64, 'D2'], [1.63, 2.42, 'D3'], [2.40, 3.82, 'D4'], [3.81, 4.42, 'D5'], [4.41, 5.0, 'D6']];
-  const bandSvg = bands.map(([a, b, n], i) => `<rect x="${X(a)}" y="${T}" width="${X(b) - X(a)}" height="${H - T - B}" fill="rgba(255,255,255,${i % 2 ? .015 : .035})"/><text x="${(X(a) + X(b)) / 2}" y="${H - B + 26}" fill="#5c6683" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">${n}</text>`).join('');
-  const ticks = [.8, 1, 1.5, 2, 3, 4, 5].map(u => `<text x="${X(u)}" y="${H - B + 14}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="middle">${u}</text>`).join('');
-  const dots = pts.map((p, i) => { const x = X(p.wave), y = Y(vs[i]), c = p.wave > 2.4 ? '#ff6b4a' : '#4fd8ff';
-    return `<line x1="${x}" x2="${x}" y1="${Y(vs[i] - es[i])}" y2="${Y(vs[i] + es[i])}" stroke="${c}" stroke-opacity=".5"/><circle cx="${x}" cy="${y}" r="3.4" fill="${c}"><title>${p.wave.toFixed(3)} µm · ${p.flux} ± ${p.err} µJy · SNR ${p.snr} · ${p.det} · ${p.obs}</title></circle>`; }).join('');
-  const one = mode === 'refl' ? `<line x1="${L}" x2="${W - R}" y1="${Y(1)}" y2="${Y(1)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>` : '';
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spectrum of ${esc(sp.name)}">${bandSvg}${yt}${one}
+  let model = '';
+  if (sp.model?.grid) {
+    const m = sp.model, tot = m.grid.map((g, i) => m.refl[i] + m.heat[i]);
+    const tr = (arr) => arr.map((v, i) => `${X(m.grid[i])},${Y(refl ? v / sunFnu(m.grid[i]) / k : v)}`).join(' ');
+    model = `<polyline points="${tr(m.refl)}" fill="none" stroke="rgba(79,216,255,.45)" stroke-dasharray="4 4"/>
+      <polyline points="${tr(m.heat.map(v => Math.max(v, 1e-6)))}" fill="none" stroke="rgba(255,107,74,.5)" stroke-dasharray="2 4"/>
+      <polyline points="${tr(tot)}" fill="none" stroke="rgba(233,237,247,.75)" stroke-width="1.4"/>`;
+  }
+  const visits = [...new Set(pts.map(p => p.visit || p.obs.split('_').slice(0, 3).join('_')))];
+  const dots = pts.map((p, i) => { const x = X(p.wave), y = Y(vs[i]), c = VCOL[visits.indexOf(p.visit || p.obs.split('_').slice(0, 3).join('_')) % VCOL.length];
+    return `<line x1="${x}" x2="${x}" y1="${Y(vs[i] * (1 - rot))}" y2="${Y(vs[i] * (1 + rot))}" stroke="${c}" stroke-opacity=".2" stroke-width="5"/>
+      <line x1="${x}" x2="${x}" y1="${Y(vs[i] - es[i])}" y2="${Y(vs[i] + es[i])}" stroke="${c}" stroke-opacity=".7"/>
+      <circle cx="${x}" cy="${y}" r="3.4" fill="${c}"><title>${p.wave.toFixed(3)} µm · ${p.flux} ± ${p.err} µJy · SNR ${p.snr} · ${p.det} · ${p.obs}${p.apcorr ? ' · PSF corr ×' + p.apcorr : ''}</title></circle>`; }).join('');
+  const one = refl ? `<line x1="${L}" x2="${W - R}" y1="${Y(1)}" y2="${Y(1)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spectrum of ${esc(sp.name)}">${bandSvg}${yt}${one}${model}
     <line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="rgba(190,205,255,.25)"/>${ticks}
     <text x="${W - R}" y="${H - 2}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="end">wavelength (µm)</text>
-    <text x="12" y="${T + 4}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" transform="rotate(-90 12 ${T + 4})" text-anchor="end">${ylab}</text>${dots}</svg>`;
+    <text x="12" y="${T + 4}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" transform="rotate(-90 12 ${T + 4})" text-anchor="end">${refl ? 'reflectance (log, ×1 µm)' : 'flux (µJy)'}</text>${dots}</svg>`;
 }
-function specNote(sp) {
-  const pts = sp.points.filter(p => p.flux > 0), s = pts.filter(p => p.wave < 1.25), l = pts.filter(p => p.wave > 3.4);
-  if (!s.length || !l.length) return `${pts.length} points from ${sp.n_images} exposures.`;
-  const rs = s.reduce((a, p) => a + p.flux / sunFnu(p.wave), 0) / s.length, rl = l.reduce((a, p) => a + p.flux / sunFnu(p.wave), 0) / l.length;
-  return `${pts.length} points from ${sp.n_images} exposures. ${rl / rs > 2 ? 'Reflectance climbs steeply past 3.4 µm: a hint of thermal emission from a warm surface.' : 'Reflectance stays near flat into the infrared: reflected sunlight dominates.'}`;
+function specTags(sp) {
+  const m = sp.model, j = sp.jpl || {}, tags = [];
+  if (m) {
+    tags.push(`<span class="tag">slope ${m.slope_per_um >= 0 ? '+' : ''}${(m.slope_per_um * 100).toFixed(0)}%/µm · ${m.slope_per_um > 0.12 ? 'red' : 'flat'}</span>`);
+    tags.push(`<span class="tag">heat ${Math.round(m.thermal_frac_4p8 * 100)}% of 4.8 µm light</span>`);
+    tags.push(`<span class="tag">T ${m.T} K${m.T_fixed ? ' (from ' + sp.r_au + ' au)' : ''} · χ²/dof ${m.chi2_dof}</span>`);
+  }
+  const cls = [j.tholen && `Tholen ${j.tholen}`, j.smass && `SMASS ${j.smass}`].filter(Boolean).join(' · ');
+  if (cls || j.albedo) tags.push(`<span class="tag jpl">JPL: ${cls || 'no class'}${j.albedo ? ' · albedo ' + j.albedo : ''}</span>`);
+  return tags.join('');
 }
 function renderSpectra(d) {
   const S = $('specs'), list = (d.spec || []).filter(s => s.points?.length);
-  if (!list.length) { S.innerHTML = '<p class="muted">No bright asteroids with spectra in this field yet. Pick another plate above.</p>'; return; }
+  if (!list.length) { S.innerHTML = `<p class="muted">${cur.px ? 'Planet X targets are too faint for spectra in single exposures.' : 'No bright asteroids with spectra in this field. Pick another plate above.'}</p>`; return; }
   S.innerHTML = '';
   list.forEach((sp, i) => {
     const el = document.createElement('article'); el.className = 'spec surface reveal';
     const draw = () => { el.querySelector('.plot').innerHTML = specSVG(sp, SPEC_MODE[sp.name] || 'refl'); el.querySelectorAll('.segmented button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === (SPEC_MODE[sp.name] || 'refl'))); };
-    el.innerHTML = `<header><div><span class="serial">SPEC ${String(i + 1).padStart(2, '0')} · V ${sp.vmag ?? '?'}</span><h3>${esc(sp.name)}</h3></div>
+    el.innerHTML = `<header><div><span class="serial">SPEC ${String(i + 1).padStart(2, '0')} · V ${sp.vmag ?? '?'} · ${sp.points.length} POINTS</span><h3>${esc(sp.name)}</h3></div>
       <div class="segmented" role="group" aria-label="Spectrum units"><button data-m="refl">Reflect</button><button data-m="flux">Flux</button></div></header>
-      <div class="plot"></div><p class="note">${specNote(sp)}</p>`;
+      <div class="plot"></div><div class="tags">${specTags(sp)}</div>
+      <p class="note">Colours mark visits; thin bars are photon noise, wide pale bars add ±0.15 mag for the asteroid's spin. Lines: reflected sunlight (cyan dashes), heat (orange dots), total (white). Every point is PSF-corrected from the image's own PSF.</p>`;
     el.querySelector('.segmented').onclick = e => { const b = e.target.closest('button'); if (b) { SPEC_MODE[sp.name] = b.dataset.m; draw(); } };
     S.append(el); draw();
   });
 }
 
+/* ---------- Planet X ---------- */
+function renderPlanetX() {
+  const G = $('pxGrid');
+  if (!PX.length) { G.innerHTML = '<div class="panel surface"><p class="muted">Planet X results are still being computed. Check back shortly.</p></div>'; return; }
+  const p = PX.find(x => x.found) || PX[0], tg = p.target || {};
+  const forced = (p.forced || []).map(f => `<span style="color:${f.snr >= 5 ? 'var(--ok)' : 'var(--ink-3)'}">${mjdDate(f.mjd).slice(5, 10)} · SNR ${f.snr ?? '–'}</span>`).join('');
+  const others = PX.filter(x => x !== p).map(x => `<p class="small muted" style="margin-top:.6rem">${esc(x.name)}: ${x.found ? '<b style="color:var(--ok)">found blind</b>' : 'not linked'} · ${x.visits} visits · ${x.target?.r_au} au · forced SNR ${(x.forced || []).map(f => f.snr).join(', ')}</p>`).join('');
+  const inj = (p.injection || []).filter(c => c.n);
+  const W = 520, H = 220, L = 46, R = 14, T = 18, B = 34, mags = inj.map(c => c.mag_ab);
+  const X = m => L + (m - Math.min(...mags)) / Math.max(.01, Math.max(...mags) - Math.min(...mags)) * (W - L - R), Y = f => T + (1 - f) * (H - T - B);
+  const line = inj.map(c => `${X(c.mag_ab)},${Y(c.recovered / c.n)}`).join(' ');
+  const lim = inj.filter(c => c.recovered / c.n >= .5).map(c => c.mag_ab).sort((a, b) => b - a)[0];
+  const chart = inj.length ? `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Fraction of synthetic slow movers recovered vs brightness">
+    ${[0, .5, 1].map(f => `<line x1="${L}" x2="${W - R}" y1="${Y(f)}" y2="${Y(f)}" stroke="rgba(190,205,255,.1)"/><text x="${L - 8}" y="${Y(f) + 4}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="end">${f * 100}%</text>`).join('')}
+    ${lim ? `<line x1="${X(lim)}" x2="${X(lim)}" y1="${T}" y2="${H - B}" stroke="rgba(255,181,71,.5)" stroke-dasharray="3 4"/><text x="${X(lim) + 6}" y="${T + 10}" fill="#ffb547" font-size="10" font-family="IBM Plex Mono">50% limit ≈ AB ${lim}</text>` : ''}
+    <polyline points="${line}" fill="none" stroke="#ffb547" stroke-width="2"/>
+    ${inj.map(c => `<circle cx="${X(c.mag_ab)}" cy="${Y(c.recovered / c.n)}" r="4" fill="#ffb547"><title>AB ${c.mag_ab}: ${c.recovered}/${c.n} synthetic movers recovered</title></circle><text x="${X(c.mag_ab)}" y="${H - B + 16}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="middle">${c.mag_ab}</text>`).join('')}
+    <text x="${W - R}" y="${H - 2}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="end">brightness (AB mag, 0.75–1.1 µm) · fainter →</text></svg>` : '<p class="muted">No injection results.</p>';
+  G.innerHTML = `<div class="panel surface reveal"><span class="label">Real target · JPL ${esc(p.jplId)}</span>
+      <p class="verdict">${p.found ? `Dwarf planet <b>${esc(p.name)}</b> found blind` : `${esc(p.name)}: present, not linked blind`}</p>
+      <dl class="kv"><dt>Distance from the Sun</dt><dd>${tg.r_au} au</dd><dt>Brightness (JPL)</dt><dd>V ${tg.V}</dd><dt>Motion seen from SPHEREx</dt><dd>${tg.motion_arcsec_h}″/h</dd><dt>Visits linked over</dt><dd>${p.visits} in ≤ 10 days</dd><dt>Unidentified tracks / chance</dt><dd>${p.candidates} / ${p.false_alarms}</dd><dt>Rejected artifacts</dt><dd>${p.artifacts ?? 0}</dd></dl>
+      <span class="label" style="margin-top:1rem;display:block">Measured at JPL's predicted spot, each visit</span><div class="forced">${forced}</div>
+      ${others}
+      <button class="btn sm press" style="margin-top:1.1rem" id="pxOpen">Blink ${esc(p.name)} in the viewer</button></div>
+    <div class="panel surface reveal"><span class="label">Synthetic Planet X movers · injected into real images</span><h3>How faint could a Planet X be?</h3>${chart}
+      <p class="muted small" style="margin-top:.6rem">${inj.reduce((s, c) => s + c.n, 0)} fake slow movers (0.3–3″/h, straight lines, SPHEREx's own PSF per detector zone) planted one brightness at a time into the same real exposures, then searched blind with the identical pipeline. ${lim ? `Half are recovered down to about AB ${lim}, roughly V ${(lim + 0.36).toFixed(1)} for sunlit ice and rock.` : ''} Every synthetic source is labelled; none appear in the tracks ledger.</p></div>`;
+  $('pxOpen').onclick = () => { selectField(p); $('blink').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); };
+}
+
 /* ---------- Proof ---------- */
 function renderProof() {
-  const C = SURVEY?.combined, bins = (C ? C.completeness : cache[cur.id].rec.summary).filter(b => b.n);
+  const C = SURVEY?.combined; const bins = (C ? C.completeness : cache[cur.id]?.rec?.summary || []).filter(b => b.n);
+  if (!bins.length) return;
   const W = 640, H = 250, pad = 40, bw = (W - pad * 2) / bins.length;
   $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Fraction of known asteroids recovered, by brightness">
     ${[0, .5, 1].map(f => `<line x1="${pad}" x2="${W - pad}" y1="${H - pad - f * (H - pad * 2)}" y2="${H - pad - f * (H - pad * 2)}" stroke="rgba(190,205,255,.1)"/><text x="${pad - 8}" y="${H - pad - f * (H - pad * 2) + 4}" fill="#7d87a3" font-size="11" font-family="IBM Plex Mono" text-anchor="end">${f * 100}%</text>`).join('')}
@@ -661,46 +864,141 @@ function renderProof() {
       <text x="${x + (bw - 20) / 2}" y="${y - 8}" fill="#e9edf7" font-size="13" font-family="IBM Plex Mono" text-anchor="middle">${b.recovered}/${b.n}</text>
       <text x="${x + (bw - 20) / 2}" y="${H - 14}" fill="#7d87a3" font-size="11" font-family="IBM Plex Mono" text-anchor="middle">${lab}</text>`; }).join('')}
     <defs><linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fd8ff"/><stop offset="1" stop-color="#2a6f9a"/></linearGradient></defs></svg>`;
-  const cand = C ? C.candidates : cache[cur.id].det.score.candidates, fa = C ? C.false_alarms : cache[cur.id].det.score.false_alarms;
-  const known = C ? C.known_tracks : cache[cur.id].det.tracks.filter(t => t.status !== 'candidate').length;
-  const mx = Math.max(cand, fa, known, 1);
-  $('meter').innerHTML = [['JPL-matched tracks', known, 'var(--known)'], ['Unidentified tracks', cand, 'var(--cand)'], ['Expected by chance', fa, 'var(--pred)']]
+  const cand = C ? C.candidates : 0, fa = C ? C.false_alarms : 0, known = C ? C.known_tracks : 0, art = C?.artifacts ?? 0;
+  const mx = Math.max(cand, fa, known, art, 1);
+  $('meter').innerHTML = [['JPL-matched tracks', known, 'var(--known)'], ['Unidentified tracks', cand, 'var(--cand)'], ['Expected by chance', fa, 'var(--pred)'], ['Rejected: same pixel', art, 'var(--bad)']]
     .map(([k, v, c]) => `<div class="row"><span>${k}</span><span class="bar"><i style="width:${100 * v / mx}%;background:${c}"></i></span><b class="mono">${v}</b></div>`).join('');
   $('meterNote').textContent = cand <= fa * 1.5 + 1
-    ? `Unidentified tracks are in line with what scrambled noise produces, so we claim none of them. That restraint is the point.`
-    : `More unidentified tracks than chance predicts: worth follow-up, still not a discovery claim.`;
+    ? 'Unidentified tracks are in line with what scrambled noise produces, so we claim none of them. That restraint is the point.'
+    : 'More unidentified tracks than chance predicts: worth follow-up and your vetting, still not a discovery claim.';
 }
 function renderPairs(d) {
-  const P = $('pairs'); P.innerHTML = ''; const n = d.rec.field.stamp;
+  const P = $('pairs'); P.innerHTML = ''; if (!d.rec) return; const n = d.rec.field.stamp;
   d.rec.results.filter(r => r.stamp && r.cmp?.stamp).sort((a, b) => a.vmag - b.vmag).slice(0, 8).forEach(r => {
-    const el = document.createElement('div'); el.className = 'pair surface';
+    const el = document.createElement('div'); el.className = 'gpair surface';
     const st = document.createElement('div'); st.className = 'st'; st.append(stamp(r.stamp, n), stamp(r.cmp.stamp, n));
     el.append(st); el.insertAdjacentHTML('beforeend', `<b>${esc(r.name)}</b><span>V ${r.vmag} · SNR ${r.m.snr.toFixed(1)} · here, then gone</span>`);
     P.append(el);
   });
 }
 
-/* ---------- Detail dialog ---------- */
+/* ---------- Detail dialog: vet + export ---------- */
+function adesPSV(t, label) {
+  const head = '# version=2017\n# observatory\n! name SPHEREx (space-based; no MPC code in this export; positions are as seen from SPHEREx)\n# comment\n! line Exported from SPHEREx Moving Sky for review. NOT for MPC submission without the spacecraft position and follow-up.\npermID|provID|trkSub|mode|stn|obsTime|ra|dec|astCat|rmsRA|rmsDec|notes';
+  const rows = t.points.map(p => ['', '', label, 'CCD', 'XXX', mjdIso(p.mjd), p.ra.toFixed(6), (p.dec >= 0 ? '+' : '') + p.dec.toFixed(6), 'Gaia3', '2.0', '2.0', `SNR=${p.snr}`].join('|'));
+  return head + '\n' + rows.join('\n') + '\n';
+}
+function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
 function openDetail(h) {
   const d = cache[cur.id], body = $('dlgBody');
   if (h.track != null) {
-    const t = d.det.tracks[h.track], sp = (d.spec || []).find(s => s.name === t.known);
+    const t = d.det.tracks[h.track], sp = (d.spec || []).find(s => s.name === t.known), key = `vet:${cur.id}:${h.track}`;
     body.innerHTML = `<header><div><span class="serial">${t.status === 'candidate' ? 'UNIDENTIFIED TRACK' : 'JPL MATCH'} · ${t.points.length} VISITS</span><h3 id="dlgTitle">${esc(t.known || 'Unidentified mover')}</h3></div><button class="close press" aria-label="Close">✕</button></header>
-      <div class="strip-st" id="dlgSt"></div>
-      <dl class="kv"><dt>Mean motion</dt><dd>${t.rate}″/h</dd><dt>Straight-line fit residual</dt><dd>${t.rms}″</dd>${t.vmag ? `<dt>Catalogue brightness</dt><dd>V ${t.vmag}</dd>` : ''}<dt>Detection SNR</dt><dd>${t.points.map(p => p.snr).join(' · ')}</dd></dl>
+      <div class="vetstrip" style="padding:0;margin-top:1rem"><div class="row" id="dlgSt"></div></div>
+      <dl class="kv" style="margin-top:.8rem"><dt>Mean motion</dt><dd>${t.rate}″/h</dd><dt>Straight-line fit residual</dt><dd>${t.rms}″</dd>${t.vmag ? `<dt>Catalogue brightness</dt><dd>V ${t.vmag}</dd>` : ''}<dt>Detection SNR</dt><dd>${t.points.map(p => p.snr).join(' · ')}</dd><dt>Detector pixels differ every visit</dt><dd style="color:var(--ok)">yes</dd></dl>
       ${sp ? `<div style="margin-top:1rem"><span class="label">Spectrum</span>${specSVG(sp, 'refl')}</div>` : ''}
-      <p class="muted" style="margin-top:1rem;font-size:.86rem">${t.status === 'candidate' ? 'No JPL object within 30″, even with no brightness limit and comets included. Compare with the chance rate before getting excited.' : 'Found blind by our detector, then matched to JPL’s prediction for this exact moment, as seen from SPHEREx.'}</p>`;
-    t.points.forEach(p => { const f = document.createElement('figure'); f.append(stamp(p.stamp, 21)); f.insertAdjacentHTML('beforeend', `<figcaption>${mjdDate(p.mjd).slice(5)}<br>SNR ${p.snr}</figcaption>`); body.querySelector('#dlgSt').append(f); });
+      <p class="muted small" style="margin-top:1rem">${t.status === 'candidate' ? 'No JPL object within 30″, even with no brightness limit and comets included. Compare with the chance rate before getting excited.' : 'Found blind by our detector, then matched to JPL’s prediction for this exact moment, as seen from SPHEREx.'}</p>
+      <span class="label" style="margin-top:1rem;display:block">Your verdict (saved in this browser)</span>
+      <div class="vote" id="vote">${['Real mover', 'Detector artifact', 'Variable star', 'Unsure'].map(v => `<button class="btn ghost sm press" data-v="${v}" aria-pressed="${store.get(key) === v}">${v}</button>`).join('')}
+        <button class="btn sm press" id="exp">Export astrometry (ADES)</button></div>`;
+    t.points.forEach(p => { const f = document.createElement('figure'), pr = document.createElement('div'); pr.className = 'pair'; pr.append(stamp(p.stamp, 21), stamp(p.others, 21, false)); f.append(pr); f.insertAdjacentHTML('beforeend', `<figcaption>${mjdDate(p.mjd).slice(5)}<br>SNR ${p.snr}</figcaption>`); body.querySelector('#dlgSt').append(f); });
+    body.querySelector('#vote').onclick = e => {
+      const b = e.target.closest('button[data-v]'); if (!b) return; store.set(key, b.dataset.v);
+      body.querySelectorAll('#vote [data-v]').forEach(x => x.setAttribute('aria-pressed', x === b)); renderLedger(d);
+    };
+    body.querySelector('#exp').onclick = () => download(`spherex-track-${cur.id}-${h.track}.psv`, adesPSV(t, `SPX${String(h.track + 1).padStart(3, '0')}`));
   } else {
-    const a = h.known, r = d.rec.results.filter(x => x.name === a.name), sp = (d.spec || []).find(s => s.name === a.name);
+    const a = h.known, r = (d.rec?.results || []).filter(x => x.name === a.name), sp = (d.spec || []).find(s => s.name === a.name);
     body.innerHTML = `<header><div><span class="serial">JPL PREDICTION · V ${a.vmag}</span><h3 id="dlgTitle">${esc(a.name)}</h3></div><button class="close press" aria-label="Close">✕</button></header>
-      <p class="lede" style="margin-top:.8rem;font-size:1rem">${r.length ? `Measured at its predicted position in ${r.length} visit${r.length > 1 ? 's' : ''}: ${r.map(x => x.status).join(', ')}.` : 'Predicted here by JPL; not in the recovery set for this field.'}</p>
-      ${sp ? `<div style="margin-top:1rem"><span class="label">Spectrum</span>${specSVG(sp, 'refl')}</div>` : ''}`;
+      <p class="lede" style="margin-top:.8rem;font-size:1rem">${r.length ? `Measured at its predicted position in ${r.length} visit${r.length > 1 ? 's' : ''}: ${r.map(x => x.status).join(', ')}.` : 'Predicted here by JPL.'}</p>
+      ${sp ? `<div style="margin-top:1rem"><span class="label">Spectrum</span>${specSVG(sp, 'refl')}<div class="tags">${specTags(sp)}</div></div>` : ''}`;
   }
   body.querySelector('.close').onclick = () => $('dlg').close();
   $('dlg').showModal();
 }
 $('dlg').addEventListener('click', e => { if (e.target === $('dlg')) $('dlg').close(); });
+
+/* ---------- Live from NASA ---------- */
+const live = (() => {
+  const log = $('lLog'), cut = $('lCut'), g = cut.getContext('2d');
+  let current = null, marks = [];
+  const line = (html, cls = '') => { log.insertAdjacentHTML('beforeend', `\n<span class="${cls}">${html}</span>`); log.scrollTop = log.scrollHeight; };
+  const kb = b => b > 1024 ? (b / 1024).toFixed(1) + ' KB' : b + ' B';
+  async function call(params, label) {
+    const qs = new URLSearchParams(params).toString(), t = performance.now();
+    line(`→ ${label}`, 'dim');
+    let res;
+    try { const r = await fetch('api/live?' + qs); res = await r.json(); if (!r.ok) throw new Error(res.error || r.status); }
+    catch (e) { line(`✕ ${esc(e.message || e)}`, 'err'); (res?.log || []).forEach(c => line(`  ${c.status} ${c.host}${c.range ? ' Range: ' + c.range.slice(0, 46) + (c.range.length > 46 ? '…' : '') : ''} · ${kb(c.bytes)} · ${c.ms} ms`)); return null; }
+    (res.log || []).forEach(c => line(`  ${c.status} ${c.host}${c.range ? '  Range: ' + c.range.slice(0, 46) + (c.range.length > 46 ? '…' : '') : ''} · ${kb(c.bytes)} · ${c.ms} ms`));
+    line(`✓ ${label} · ${Math.round(performance.now() - t)} ms round trip`, 'dim');
+    return res;
+  }
+  function drawCut() {
+    if (!current) return;
+    const { w, h, stamp: px } = current, s = 8; cut.width = w * s; cut.height = h * s;
+    const off = document.createElement('canvas'); off.width = w; off.height = h;
+    const og = off.getContext('2d'), im = og.createImageData(w, h);
+    // FITS rows run bottom-up; draw them top-down (detector orientation) and flip markers to match
+    px.forEach((v, i) => { const r = Math.floor(i / w), c = i % w; im.data.set([v, v * .96, v * .9, 255], ((h - 1 - r) * w + c) * 4); });
+    og.putImageData(im, 0, 0);
+    g.imageSmoothingEnabled = false; g.drawImage(off, 0, 0, w * s, h * s);
+    const at = (x, y) => [(x - current.x0 + .5) * s, (h - 1 - (y - current.y0) + .5) * s];
+    const [cx, cy] = at(current.x, current.y);
+    g.strokeStyle = '#ff6b4a'; g.lineWidth = 2; for (let q = 0; q < 4; q++) { const a0 = q * Math.PI / 2 + .35; g.beginPath(); g.arc(cx, cy, 22, a0, a0 + .85); g.stroke(); }
+    marks.forEach(m => { const [x, y] = at(m.x, m.y); g.strokeStyle = m.color; g.lineWidth = 1.6; g.beginPath(); g.arc(x, y, 14, 0, 7); g.stroke(); g.fillStyle = m.color; g.font = '500 13px "IBM Plex Mono", monospace'; g.fillText(m.label, x + 17, y - 10); });
+  }
+  async function find() {
+    const ra = +$('lRa').value, dec = +$('lDec').value; if (!(ra >= 0 && ra <= 360 && dec >= -90 && dec <= 90)) { line('✕ RA must be 0–360 and Dec −90–90', 'err'); return; }
+    $('lFind').disabled = true; $('lExps').innerHTML = '<p class="muted small" style="padding:.6rem 0">Asking IRSA…</p>';
+    const res = await call({ op: 'images', ra, dec }, `IRSA SIA: SPHEREx exposures at ${ra}, ${dec}`); $('lFind').disabled = false;
+    if (!res) { $('lExps').innerHTML = ''; return; }
+    $('lExps').innerHTML = res.images.length ? '' : '<p class="muted small" style="padding:.6rem 0">No SPHEREx exposures cover that position yet.</p>';
+    res.images.forEach(im => {
+      const b = document.createElement('button'); b.className = 'press';
+      b.innerHTML = `<span>${mjdDate(im.mjd)}</span><span>${im.det}</span><span>${im.um[0]}–${im.um[1]} µm · ${esc(im.obs)}</span>`;
+      b.onclick = () => { [...$('lExps').children].forEach(x => x.setAttribute('aria-pressed', x === b)); load(im.url, ra, dec); };
+      $('lExps').append(b);
+    });
+    line(`  ${res.count} exposures found; click one to read its pixels`, 'dim');
+  }
+  async function load(url, ra, dec) {
+    marks = [];
+    const res = await call({ op: 'cutout', url, ra, dec, half: 24 }, 'cutout via HTTP range requests');
+    if (!res) return;
+    if (!res.inside) { line('  position is outside this exposure', 'err'); return; }
+    current = { ...res, url, ra, dec }; drawCut();
+    line(`  ${res.obs} · detector D${res.detector} · ${res.date} · read ${kb(res.bytes)} of a 69 MB file`, 'dim');
+    $('lKnown').disabled = $('lWhere').disabled = false;
+  }
+  async function known() {
+    if (!current) return; $('lKnown').disabled = true;
+    const res = await call({ op: 'known', url: current.url, ra: current.ra, dec: current.dec }, 'JPL: known asteroids here at this moment, seen from SPHEREx');
+    $('lKnown').disabled = false; if (!res) return;
+    marks = marks.filter(m => m.kind !== 'known').concat(res.objects.map(o => ({ kind: 'known', x: o.x, y: o.y, color: '#4fd8ff', label: `${o.name.split(' (')[0]} V${o.V}` })));
+    line(`  ${res.objects.length} known asteroid${res.objects.length === 1 ? '' : 's'} predicted in this cutout`, 'dim'); drawCut();
+  }
+  async function where() {
+    if (!current) return; const name = $('lName').value.trim(); if (!name) return;
+    const res = await call({ op: 'where', name, mjd: current.mjd }, `JPL Horizons: where is ${name}?`);
+    if (!res) return;
+    const r2 = await call({ op: 'cutout', url: current.url, ra: res.ra, dec: res.dec, half: 4 }, `pixel position of ${res.name}`);
+    if (!r2) return;
+    const dx = r2.x - current.x, dy = r2.y - current.y;
+    if (Math.abs(dx) > current.w / 2 || Math.abs(dy) > current.h / 2) { line(`  ${esc(res.name)} is ${Math.hypot(dx, dy).toFixed(0)} px away, outside this cutout (RA ${res.ra.toFixed(4)}, Dec ${res.dec.toFixed(4)})`, 'dim'); return; }
+    marks.push({ kind: 'where', x: r2.x, y: r2.y, color: '#ffb547', label: res.name.split(' (')[0] }); drawCut();
+  }
+  $('lFind').onclick = find; $('lKnown').onclick = known; $('lWhere').onclick = where;
+  $('lName').addEventListener('keydown', e => { if (e.key === 'Enter') where(); });
+  $('lExample').onclick = () => {
+    $('lRa').value = '179.8304'; $('lDec').value = '1.1069';
+    load('https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W21_1B/l2b-v20-2025-248/1/level2_2025W21_1B_0594_1D1_spx_l2b-v20-2025-248.fits', 179.8304, 1.1069);
+    $('lName').value = '872';
+  };
+  $('lHere').onclick = () => { const f = cache[cur?.id]?.det?.field; if (f) { $('lRa').value = f.ra.toFixed(4); $('lDec').value = f.dec.toFixed(4); } };
+  g.fillStyle = '#000'; cut.width = cut.height = 400; g.fillRect(0, 0, 400, 400);
+  g.fillStyle = '#5c6683'; g.font = '500 13px "IBM Plex Mono", monospace'; g.textAlign = 'center'; g.fillText('pick an exposure to read its pixels live', 200, 204);
+})();
 
 boot();
 </script>

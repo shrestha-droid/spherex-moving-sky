@@ -7,7 +7,7 @@ slightly shifted frames, so one visit puts an asteroid on ~8 different wavelengt
 ~8 minutes, and more visits add more. JPL's predicted track places the asteroid in
 each frame; the WCS-WAVE table gives the exact wavelength of that pixel.
 """
-import warnings
+import json, warnings
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import spherex as S
@@ -15,10 +15,9 @@ from recover import Visit, measure
 
 warnings.filterwarnings("ignore", module="astropy")
 OMEGA = (6.15 / 206265) ** 2   # sr per pixel
-AP_SPEC = 3.0                  # px; wider than detection aperture so the long-wavelength PSF fits
-# ponytail: fixed aperture, no PSF-based aperture correction; long-wavelength fluxes read
-# somewhat low. Use the PSF extension per image when absolute fluxes matter.
+AP_SPEC = 3.0                  # px; the real PSF puts > 99.6% of the light inside this at every wavelength
 SNR_SPEC = 3.0
+ROT_MAG = 0.15                 # mag; typical asteroid spin brightness swing between visits hours apart
 
 
 def track(points):
@@ -54,13 +53,96 @@ def spectrum(name, points, max_images=64):
         wave, bw = v.fits.wavelength(*p)
         if not np.isfinite(wave):
             return None
-        f = m["flux"] * OMEGA * 1e12  # MJy -> microJansky
+        corr = v.fits.ap_correction(*p, AP_SPEC)   # from this image's own PSF, for this detector zone
+        f = m["flux"] * OMEGA * 1e12 * corr        # MJy -> microJansky, aperture-corrected
         return {"wave": round(wave, 4), "bw": round(bw, 4), "flux": round(f, 2), "err": round(f / m["snr"], 2),
-                "snr": round(m["snr"], 1), "mjd": round(v.mjd, 5), "det": row["energy_bandpassname"][-2:], "obs": v.id}
+                "snr": round(m["snr"], 1), "mjd": round(v.mjd, 5), "det": row["energy_bandpassname"][-2:], "obs": v.id,
+                "apcorr": round(corr, 4), "visit": v.id.rsplit("_", 1)[0]}
 
     with ThreadPoolExecutor(4) as ex:
         pts = [p for p in ex.map(one, rows) if p]
-    return {"name": name, "n_images": len(rows), "points": sorted(pts, key=lambda p: p["wave"])}
+    sp = {"name": name, "n_images": len(rows), "points": sorted(pts, key=lambda p: p["wave"]),
+          "r_au": helio_r(name, float(np.mean([p[0] for p in points])))}
+    sp["model"] = fit_model(sp["points"], sp["r_au"])
+    sp["jpl"] = sbdb(name)
+    return sp
+
+
+def sbdb(name):
+    """Published physical data from JPL SBDB: taxonomic class, albedo, diameter (for comparison only)."""
+    num = name.split()[0]
+    def fetch():
+        body, _ = S.get("https://ssd-api.jpl.nasa.gov/sbdb.api", {"sstr": num, "phys-par": "1"})
+        return json.loads(body)
+    try:
+        phys = {p["name"]: p["value"] for p in S.cached_json(f"sbdb_{num}.json", fetch).get("phys_par", [])}
+    except Exception:
+        return {}
+    return {k: phys[v] for k, v in (("tholen", "spec_T"), ("smass", "spec_B"), ("albedo", "albedo"), ("diameter_km", "diameter")) if phys.get(v)}
+
+
+def sun_fnu(um):
+    """Solar spectrum shape in F_nu (5778 K blackbody), arbitrary units."""
+    nu = 2.998e14 / np.asarray(um)
+    return nu ** 3 / np.expm1(6.626e-34 * nu / (1.381e-23 * 5778))
+
+
+def bb_fnu(um, T):
+    nu = 2.998e14 / np.asarray(um)
+    return nu ** 3 / np.expm1(6.626e-34 * nu / (1.381e-23 * T))
+
+
+def helio_r(name, mjd):
+    """Sun distance (au) of a numbered asteroid at mjd, from JPL Horizons."""
+    num = name.split()[0]
+    def fetch():
+        body, _ = S.get("https://ssd.jpl.nasa.gov/api/horizons.api", {
+            "format": "json", "COMMAND": f"'{num};'", "MAKE_EPHEM": "'YES'", "EPHEM_TYPE": "'OBSERVER'",
+            "CENTER": "'500@-163182'", "TLIST": f"'{mjd + 2400000.5}'", "TLIST_TYPE": "'JD'",
+            "QUANTITIES": "'19'", "CSV_FORMAT": "'YES'", "OBJ_DATA": "'NO'"})
+        return json.loads(body)
+    try:
+        res = S.cached_json(f"helio_{num}_{mjd:.3f}.json", fetch)["result"]
+        row = res.split("$$SOE")[1].split("$$EOE")[0].strip().split(",")
+        return round(float(row[-3]), 4)
+    except Exception:
+        return None
+
+
+def fit_model(pts, r_au):
+    """Reflected sunlight with a linear spectral slope + one blackbody for the asteroid's heat.
+
+    F(l) = A * sun(l) * (1 + s * (l - 1 um)) + B * BB(l, T). A, A*s, B are linear; T is
+    grid-searched. Errors include a ROT_MAG spin term, since points come from different visits.
+    ponytail: a single-temperature blackbody, not a thermal model (NEATM) with albedo and
+    beaming; enough to separate reflected light from heat, not to measure sizes."""
+    if len(pts) < 6 or max(p["wave"] for p in pts) - min(p["wave"] for p in pts) < 2.5:
+        return None
+    lam = np.array([p["wave"] for p in pts]); f = np.array([p["flux"] for p in pts])
+    sig = np.hypot([p["err"] for p in pts], f * (10 ** (0.4 * ROT_MAG) - 1))
+    best = None
+    # T from the Sun distance (subsolar temperature, beaming eta=1.2); a free T is degenerate with
+    # the heat amplitude when only the last detector constrains it. Grid-search only if r is unknown.
+    temps = [394 / np.sqrt(r_au) * 1.2 ** -0.25] if r_au else np.arange(120, 451, 5)
+    for T in temps:
+        X = np.stack([sun_fnu(lam), sun_fnu(lam) * (lam - 1), bb_fnu(lam, T)], 1) / sig[:, None]
+        coef, *_ = np.linalg.lstsq(X, f / sig, rcond=None)
+        if coef[0] <= 0 or coef[2] < 0:
+            continue
+        chi2 = float(np.sum((X @ coef - f / sig) ** 2))
+        if best is None or chi2 < best[0]:
+            best = (chi2, T, coef)
+    if best is None:
+        return None
+    chi2, T, (a, a_s, b) = best
+    grid = np.geomspace(0.75, 5.0, 60)
+    refl, heat = a * sun_fnu(grid) * (1 + a_s / a * (grid - 1)), b * bb_fnu(grid, T)
+    i48 = int(np.argmin(abs(grid - 4.8)))
+    return {"T": round(float(T)), "T_fixed": bool(r_au), "slope_per_um": round(float(a_s / a), 3), "chi2_dof": round(chi2 / max(len(pts) - 4, 1), 2),
+            "thermal_frac_4p8": round(float(heat[i48] / (heat[i48] + refl[i48])), 2),
+            "T_expected": round(394 / np.sqrt(r_au), 0) if r_au else None,
+            "grid": [round(float(g), 3) for g in grid], "refl": [round(float(v), 1) for v in refl],
+            "heat": [round(float(v), 1) for v in heat]}
 
 
 if __name__ == "__main__":
