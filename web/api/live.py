@@ -222,8 +222,8 @@ def op_known(q, log):
     mjd = float(h["MJD-AVG"])
     body, _ = log.get("https://ssd-api.jpl.nasa.gov/sb_ident.api", {
         "xobs": spherex_xyz(log, mjd), "obs-time": f"{mjd + 2400000.5:.6f}", "sb-kind": "a",
-        "fov-ra-center": sexa(ra, hours=True), "fov-dec-center": sexa(dec), "fov-ra-hwidth": 0.07,
-        "fov-dec-hwidth": 0.07, "vmag-lim": 21})
+        "fov-ra-center": sexa(ra, hours=True), "fov-dec-center": sexa(dec), "fov-ra-hwidth": 0.045,
+        "fov-dec-hwidth": 0.045, "vmag-lim": 20})  # just the cutout (49 px x 6.15")
     res = json.loads(body)
     out = []
     for r in res.get("data_first_pass", []):

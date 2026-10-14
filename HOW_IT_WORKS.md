@@ -43,6 +43,18 @@ Grouped by brightness (V magnitude), this gives the **completeness curve**: how 
 6. **False-alarm test.** Rotate each visit's seeds by a random angle around the field center, 30 times, and count how many tracks still link. Rotation keeps the density of noise peaks but destroys real motion, so whatever links is pure chance. If we find N candidates and chance alone predicts about N, the candidates are not significant. We say so openly.
 7. **Score.** Of the bright known asteroids that crossed the region, how many did we find blind?
 
+## 4b. Planet X mode: slow movers (`detect.py` slow mode, `distant.py`)
+- A body at 50–500 AU moves only about **0.3–3″/h**. Over a few hours that's less than a pixel, so SPHEREx's outlier flags don't fire. Over a week, though, it moves **8–55 pixels**, which is enough to link.
+- **Seeds:** any uncatalogued peak (SNR ≥ 5) that is **missing from the median of every other visit** at the same sky spot. A faint star is present in every visit, so it drops out; a slow mover is only there briefly.
+- **Linking:** straight lines at 0.3–3″/h through **4 or more visits** within about 10 days, followed by the same scramble test and same-pixel artifact filter as fast mode.
+- **Why not across 6 months?** In half a year, Earth's own orbit around the Sun shifts a distant object's apparent position by degrees. Linking across passes needs a full orbit search. Within one pass, the motion is a straight line.
+- **The real test:** the dwarf planets **Makemake** (52.7 AU, V 17.1, 1.4″/h) and **Haumea** (49.9 AU, V 17.3, 1.5″/h). Both were **found blind**: 0 unidentified tracks, against 0.8 and 0.03 expected by chance.
+- **Depth:** we plant synthetic slow movers into the same real images, one brightness at a time. Each is drawn with **SPHEREx's own PSF** for the detector zone it lands in. We then search with the identical pipeline. The 50% recovery limit is about **AB 17.7**, roughly V 18. Synthetic sources never enter the real results.
+
+## 4c. Defences against fake tracks
+- **Detector-fixed defects.** A warm pixel or persistence spot stays at the same detector (x, y). Because SPHEREx points somewhere new each visit, that fixed pixel shows up at a different place on the sky each time and could fake a track. The scramble test rotates detections on the *sky*, so it can't catch this. So we **reject any track that uses the same detector pixel (within 2 px) in two visits**. Rejected tracks are shown in the ledger, not hidden.
+- **Robust noise.** The sky noise comes from the median absolute deviation of the background ring. A plain variance let a single bright star in the ring inflate the noise 50×. That bug once hid Makemake in 4 of its 8 visits; with the robust estimate it measures SNR 5–12 in 7 of 8.
+
 ## 5. Step three: a spectrum for every bright asteroid (`spectra.py`)
 - SPHEREx's six detectors work in **pairs**: D1+D4, D2+D5 and D3+D6. Each pair looks at its own patch of sky, so at any instant an asteroid is in exactly two detectors: one short-wavelength, one long-wavelength. It is *not* imaged in all six bands at once.
 - Each visit is a burst of **4 slightly shifted frames**. Because every detector row sees a different wavelength, those shifts put the asteroid on about **8 different wavelengths in about 8 minutes**. Later visits, which land on other detectors, add more.
@@ -50,10 +62,21 @@ Grouped by brightness (V magnitude), this gives the **completeness curve**: how 
 - Converting to µJy: pixel values are MJy/sr. Multiply by the pixel's solid angle, (6.15″)² in steradians, then by 10¹².
 - **Reflectance** is the asteroid's flux divided by the Sun's spectrum, normalised near 1 µm. Flat or reddish means reflected sunlight. A steep rise past about 3.5 µm is **heat** from the asteroid's surface.
 - Example: 872 Holda gave 22 points from 0.87 to 4.85 µm, covering all six detectors, with a clear thermal rise at 4.8 µm.
-- Limits: a fixed aperture with no correction for how the blur grows with wavelength, so the longest wavelengths read somewhat low. Also, the asteroid spins between visits, which changes its brightness by roughly 10–30%.
+- **PSF correction:** every file stores SPHEREx's real PSF for 121 detector zones. A 3-pixel aperture captures more than **99.6% of the light at every wavelength from 0.9 to 4.7 µm**, because the 6.15″ pixels dominate the blur. We still apply each point's own correction.
+- **Spin:** points from different visits carry an extra ±0.15 mag uncertainty in the fit, and the chart colours points by visit so any offset between visits is visible.
+- **Model:** reflected sunlight with a linear spectral slope, plus one blackbody for the asteroid's heat. The temperature is *fixed* from its Sun distance (JPL Horizons; subsolar temperature with the standard beaming factor η = 1.2). A free temperature is degenerate with the heat amplitude when only the last detector constrains it.
+- **Validation against JPL SBDB, not used in the fit:** across 9 asteroids our slope rises with published albedo (Spearman ρ = 0.68, permutation p ≈ 0.05). Dark, primitive asteroids come out flat; bright S-types come out red.
 
 ## 6. Step four: a survey, not one field (`survey.py`)
 We run ten field-passes along the ecliptic, the band where most asteroids are. Some are the same patch of sky six months apart, which means a completely different set of asteroids. Each search box is centred automatically where bright known asteroids cross. The combined numbers on the site (completeness, blind finds, candidates against chance) come from all fields together.
+
+## 6b. Live mode (`web/api/live.py`)
+The website is not only a recording. The **Query NASA, live** panel calls a Vercel serverless function, standard-library Python only, which:
+1. asks IRSA's SIA service which SPHEREx exposures cover a position;
+2. reads the FITS headers and **only the requested pixel rows** of the 69 MB file with HTTP range requests (for example, about 40–50 KB for a 49×49 cutout, in about 1 s);
+3. asks JPL which known asteroids are in that cutout as seen from SPHEREx at that moment, or where any named body is.
+
+Every request's byte range, size and time is shown in the on-page network log. The function only contacts IRSA and JPL and only accepts SPHEREx file URLs (other URLs return HTTP 400), so it can't be used as an open proxy. Sky-to-pixel uses the header's TAN-SIP inverse distortion, written from scratch, and agrees with astropy to 0.003 px.
 
 ## 7. What a candidate is, and is not
 A candidate is a moving source with no match in JPL's catalogue at our search limits. It could be:
@@ -66,7 +89,7 @@ A candidate is a moving source with no match in JPL's catalogue at our search li
 We call it a candidate and show the evidence (stamps, rate, fit residual). **We never claim a discovery.** Real discoveries go through the Minor Planet Center with follow-up observations.
 
 ## 8. Known limits
-- **Slow movers.** Objects slower than 2″/h are rejected, because slowly drifting stars can fake them. Very distant objects such as TNOs or a "Planet X" move slower than that. Catching them needs SPHEREx's 6-month revisits, not a few days. That is the natural next step and a good answer when judges ask "why Planet X?".
+- **Slow movers below 0.3″/h** (beyond about 500 AU) need more than a week; across 6-month passes they need an orbit search. Planet X mode covers 0.3–3″/h.
 - **Straight lines.** Over 2–3 days asteroid paths are almost straight; longer gaps need real orbit fitting.
 - **Regions.** We search small regions (about 1°) to keep downloads small. The pipeline itself has no size limit.
 
