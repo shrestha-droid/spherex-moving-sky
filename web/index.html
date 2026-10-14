@@ -610,17 +610,21 @@ function specSVG(sp, mode) {
   if (mode === 'refl') {
     const short = pts.filter(p => p.wave < 1.25), ref = short.length ? short : pts;
     const k = ref.map(p => p.flux / sunFnu(p.wave)).sort((a, b) => a - b)[Math.floor(ref.length / 2)];
-    val = p => p.flux / sunFnu(p.wave) / k; err = p => p.err / sunFnu(p.wave) / k; ylab = 'reflectance (relative)';
+    val = p => p.flux / sunFnu(p.wave) / k; err = p => p.err / sunFnu(p.wave) / k; ylab = 'reflectance (log, ×1 µm)';
   }
-  const vs = pts.map(val), es = pts.map(err), top = Math.max(...vs.map((v, i) => v + es[i])) * 1.1, bot = Math.min(0, ...vs.map((v, i) => v - es[i]));
-  const Y = v => T + (top - v) / (top - bot) * (H - T - B);
+  const vs = pts.map(val), es = pts.map(err), log = mode === 'refl';
+  let top = Math.max(...vs.map((v, i) => v + es[i])) * 1.1, bot = Math.min(0, ...vs.map((v, i) => v - es[i]));
+  if (log) { top = Math.log10(Math.max(...vs) * 1.6); bot = Math.log10(Math.max(1e-3, Math.min(...vs.filter(v => v > 0)) * .6)); }
+  const Y = v => { const u = log ? Math.log10(Math.max(v, 10 ** bot)) : v; return T + (top - u) / (top - bot) * (H - T - B); };
+  const yt = log ? [.5, 1, 2, 5, 10, 20, 50].filter(t => Math.log10(t) > bot && Math.log10(t) < top)
+    .map(t => `<line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" stroke="rgba(190,205,255,.07)"/><text x="${L - 6}" y="${Y(t) + 3}" fill="#7d87a3" font-size="9" font-family="IBM Plex Mono" text-anchor="end">${t}×</text>`).join('') : '';
   const bands = [[.75, 1.11, 'D1'], [1.10, 1.64, 'D2'], [1.63, 2.42, 'D3'], [2.40, 3.82, 'D4'], [3.81, 4.42, 'D5'], [4.41, 5.0, 'D6']];
   const bandSvg = bands.map(([a, b, n], i) => `<rect x="${X(a)}" y="${T}" width="${X(b) - X(a)}" height="${H - T - B}" fill="rgba(255,255,255,${i % 2 ? .015 : .035})"/><text x="${(X(a) + X(b)) / 2}" y="${H - B + 26}" fill="#5c6683" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">${n}</text>`).join('');
   const ticks = [.8, 1, 1.5, 2, 3, 4, 5].map(u => `<text x="${X(u)}" y="${H - B + 14}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="middle">${u}</text>`).join('');
   const dots = pts.map((p, i) => { const x = X(p.wave), y = Y(vs[i]), c = p.wave > 2.4 ? '#ff6b4a' : '#4fd8ff';
     return `<line x1="${x}" x2="${x}" y1="${Y(vs[i] - es[i])}" y2="${Y(vs[i] + es[i])}" stroke="${c}" stroke-opacity=".5"/><circle cx="${x}" cy="${y}" r="3.4" fill="${c}"><title>${p.wave.toFixed(3)} µm · ${p.flux} ± ${p.err} µJy · SNR ${p.snr} · ${p.det} · ${p.obs}</title></circle>`; }).join('');
   const one = mode === 'refl' ? `<line x1="${L}" x2="${W - R}" y1="${Y(1)}" y2="${Y(1)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>` : '';
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spectrum of ${esc(sp.name)}">${bandSvg}${one}
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spectrum of ${esc(sp.name)}">${bandSvg}${yt}${one}
     <line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="rgba(190,205,255,.25)"/>${ticks}
     <text x="${W - R}" y="${H - 2}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" text-anchor="end">wavelength (µm)</text>
     <text x="12" y="${T + 4}" fill="#7d87a3" font-size="10" font-family="IBM Plex Mono" transform="rotate(-90 12 ${T + 4})" text-anchor="end">${ylab}</text>${dots}</svg>`;
