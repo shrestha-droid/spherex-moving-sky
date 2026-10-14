@@ -2,6 +2,8 @@
 
 NASA Space Apps Challenge 2026: [Planet X and SPHEREx](https://www.spaceappschallenge.org/2026/challenges/planet-x-and-spherex/).
 
+**Live demo: https://spherex-moving-sky.vercel.app**
+
 This public web tool blinks the SPHEREx sky across visits and finds moving objects automatically. It then proves the detector works by recovering known asteroids from JPL's catalogue.
 
 - How it works (read this before judging): [HOW_IT_WORKS.md](HOW_IT_WORKS.md)
@@ -27,6 +29,9 @@ Everything we download is cached in `data/`, which git ignores. A re-run makes n
 | `web/index.html` | The viewer: blink player, track overlays, recovery chart and stamp gallery. No dependencies |
 
 Each script runs its own small self-checks (asserts) at the start.
+
+## Deploy
+Vercel builds the site from `web/` (the project root directory) automatically on every push to `main`. No build step is needed.
 
 ## Data credits
 SPHEREx Quick Release 2, NASA/IPAC Infrared Science Archive, [DOI 10.26131/IRSA652](https://doi.org/10.26131/IRSA652). JPL Horizons. JPL Small-Body Identification API.
