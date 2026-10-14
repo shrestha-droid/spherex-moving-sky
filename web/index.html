@@ -198,7 +198,7 @@ function recovery(rec) {
 
   const n = rec.field.stamp;
   const best = {};
-  for (const r of rec.results) if (r.status === 'recovered' && r.cmp && (!best[r.name] || r.m.snr > best[r.name].m.snr)) best[r.name] = r;
+  for (const r of rec.results) if (r.status === 'recovered' && r.stamp && r.cmp && (!best[r.name] || r.m.snr > best[r.name].m.snr)) best[r.name] = r;
   const good = Object.values(best).sort((a, b) => a.vmag - b.vmag).slice(0, 12);
   for (const r of good) {
     const el = document.createElement('div'); el.className = 'pair';

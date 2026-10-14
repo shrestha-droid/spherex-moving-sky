@@ -159,6 +159,16 @@ if __name__ == "__main__":
     summary = summarize(results)
     for s in summary:
         print(f"  {s['label']:>6}: {s['recovered']}/{s['n']}")
+    # keep image stamps only for the gallery: best-SNR recovery per asteroid
+    best = {}
+    for r in results:
+        if r["status"] == "recovered" and r.get("cmp") and (r["name"] not in best or r["m"]["snr"] > best[r["name"]]["m"]["snr"]):
+            best[r["name"]] = r
+    keep = {id(r) for r in sorted(best.values(), key=lambda r: r["vmag"])[:12]}
+    for r in results:
+        if id(r) not in keep:
+            r.pop("stamp", None)
+            r.get("cmp", {}).pop("stamp", None)
     os.makedirs("web", exist_ok=True)
     json.dump({"field": {"ra": ra, "dec": dec, "detector": det, "stamp": 2 * R + 1},
                "visits": [{"id": v.id, "mjd": v.mjd} for v in vs],

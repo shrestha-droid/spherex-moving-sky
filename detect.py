@@ -214,7 +214,7 @@ def run(ra0, dec0, box, det, days):
         dets += s
         sky = resample(v, x0, y0, img, gw, n)
         lo, hi = np.nanpercentile(sky, 5), np.nanpercentile(sky, 99.7)
-        png(f"web/img/{v.id}.png", np.array(to_u8(sky, lo, hi), np.uint8).reshape(n, n)[::-1])  # north up
+        png(f"web/img/{v.id}.png", (np.array(to_u8(sky, lo, hi), np.uint8).reshape(n, n)[::-1] // 4) * 4)  # north up; 64 grey levels compress better
         frames.append({"id": v.id, "mjd": v.mjd, "img": f"img/{v.id}.png"})
         print(f"  {v.id}: {len(s)} outlier seeds", flush=True)
     tracks = link(dets, ra0, dec0)
