@@ -43,7 +43,19 @@ Grouped by brightness (V magnitude), this gives the **completeness curve**: how 
 6. **False-alarm test.** Rotate each visit's seeds by a random angle around the field center, 30 times, and count how many tracks still link. Rotation keeps the density of noise peaks but destroys real motion, so whatever links is pure chance. If we find N candidates and chance alone predicts about N, the candidates are not significant. We say so openly.
 7. **Score.** Of the bright known asteroids that crossed the region, how many did we find blind?
 
-## 5. What a candidate is, and is not
+## 5. Step three: a spectrum for every bright asteroid (`spectra.py`)
+- SPHEREx's six detectors work in **pairs**: D1+D4, D2+D5 and D3+D6. Each pair looks at its own patch of sky, so at any instant an asteroid is in exactly two detectors: one short-wavelength, one long-wavelength. It is *not* imaged in all six bands at once.
+- Each visit is a burst of **4 slightly shifted frames**. Because every detector row sees a different wavelength, those shifts put the asteroid on about **8 different wavelengths in about 8 minutes**. Later visits, which land on other detectors, add more.
+- JPL's predicted track places the asteroid in every exposure it crosses, in any detector. We measure its brightness there, using a slightly wider aperture so the longer-wavelength blur fits. The file's per-pixel `WCS-WAVE` table gives the exact wavelength.
+- Converting to µJy: pixel values are MJy/sr. Multiply by the pixel's solid angle, (6.15″)² in steradians, then by 10¹².
+- **Reflectance** is the asteroid's flux divided by the Sun's spectrum, normalised near 1 µm. Flat or reddish means reflected sunlight. A steep rise past about 3.5 µm is **heat** from the asteroid's surface.
+- Example: 872 Holda gave 22 points from 0.87 to 4.85 µm, covering all six detectors, with a clear thermal rise at 4.8 µm.
+- Limits: a fixed aperture with no correction for how the blur grows with wavelength, so the longest wavelengths read somewhat low. Also, the asteroid spins between visits, which changes its brightness by roughly 10–30%.
+
+## 6. Step four: a survey, not one field (`survey.py`)
+We run ten field-passes along the ecliptic, the band where most asteroids are. Some are the same patch of sky six months apart, which means a completely different set of asteroids. Each search box is centred automatically where bright known asteroids cross. The combined numbers on the site (completeness, blind finds, candidates against chance) come from all fields together.
+
+## 7. What a candidate is, and is not
 A candidate is a moving source with no match in JPL's catalogue at our search limits. It could be:
 - an asteroid fainter than our search limit,
 - a comet,
@@ -53,7 +65,7 @@ A candidate is a moving source with no match in JPL's catalogue at our search li
 
 We call it a candidate and show the evidence (stamps, rate, fit residual). **We never claim a discovery.** Real discoveries go through the Minor Planet Center with follow-up observations.
 
-## 6. Known limits
+## 8. Known limits
 - **Slow movers.** Objects slower than 2″/h are rejected, because slowly drifting stars can fake them. Very distant objects such as TNOs or a "Planet X" move slower than that. Catching them needs SPHEREx's 6-month revisits, not a few days. That is the natural next step and a good answer when judges ask "why Planet X?".
 - **Straight lines.** Over 2–3 days asteroid paths are almost straight; longer gaps need real orbit fitting.
 - **Regions.** We search small regions (about 1°) to keep downloads small. The pipeline itself has no size limit.
