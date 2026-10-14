@@ -57,15 +57,37 @@ em { font-family: var(--display); font-style: italic; color: var(--ir); font-wei
 .field input, .field select { background: rgba(0,0,0,.35); border: 0; box-shadow: inset 0 0 0 1px var(--rule-2); border-radius: 10px; padding: .6rem .75rem; font: 500 .9rem var(--mono); min-width: 0; }
 .field input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--ir); }
 
-.nav { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--rule); }
-.nav .wrap { display: flex; align-items: center; gap: 1.6rem; height: 62px; }
-.logo { display: flex; align-items: center; gap: .65rem; text-decoration: none; font: 700 .74rem var(--sans); font-stretch: 125%; letter-spacing: .2em; text-transform: uppercase; white-space: nowrap; }
+.nav { position: sticky; top: 0; z-index: 30; background: #03050a; border-bottom: 1px solid var(--rule); }
+.nav .wrap { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1.6rem; height: 58px; }
+.logo { display: flex; align-items: center; gap: .7rem; text-decoration: none; white-space: nowrap; }
 .logo svg { width: 30px; height: 30px; flex: none; }
-.logo .mark { transition: transform .5s var(--ease-soft); }
-.logo:hover .mark { transform: rotate(-12deg) scale(1.06); }
-.nav nav { display: flex; gap: 1.3rem; margin-left: auto; }
-.nav nav a { text-decoration: none; font-size: .84rem; color: var(--ink-2); }
-.nav nav a:hover { color: var(--ink); text-decoration: underline; text-decoration-color: var(--ir); text-underline-offset: 6px; }
+.logo .mark { transition: transform .6s var(--ease-soft); }
+.logo:hover .mark { transform: rotate(-14deg); }
+.wordmark { display: flex; align-items: baseline; gap: .45rem; }
+.wordmark b { font: 400 1.45rem/1 var(--display); letter-spacing: -.01em; color: var(--ink); }
+.wordmark span { font: 500 .66rem var(--mono); color: var(--ink-3); letter-spacing: .04em; }
+.nav nav { display: flex; justify-content: center; gap: .15rem; }
+.nav nav a { position: relative; text-decoration: none; font: 500 .7rem var(--mono); letter-spacing: .04em; color: var(--ink-3); padding: .5rem .55rem; border-radius: 6px; transition: color .2s var(--ease), background-color .2s var(--ease); }
+.nav nav a i { font-style: normal; color: var(--ir); opacity: .7; margin-right: .3rem; }
+.nav nav a:hover { color: var(--ink); background: rgba(255,255,255,.04); }
+.nav nav a[aria-current="true"] { color: var(--ink); }
+.nav nav a[aria-current="true"] i { opacity: 1; }
+.nav nav a[aria-current="true"]::after { content: ""; position: absolute; left: .55rem; right: .55rem; bottom: .2rem; height: 1px; background: linear-gradient(90deg, #4fd8ff, #c79bff, #ff6b4a); }
+.clock { display: grid; justify-items: end; font: 500 .62rem/1.35 var(--mono); color: var(--ink-3); letter-spacing: .04em; white-space: nowrap; }
+.clock b { color: var(--ink-2); font-weight: 500; }
+.clock .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-right: .35rem; box-shadow: 0 0 0 0 rgba(94,230,160,.5); animation: ping 2.4s var(--ease-soft) infinite; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(94,230,160,.5); } 70%, 100% { box-shadow: 0 0 0 6px rgba(94,230,160,0); } }
+.spectrum { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: rgba(255,255,255,.04); }
+.spectrum i { display: block; height: 100%; width: 100%; transform-origin: left; transform: scaleX(0); background: linear-gradient(90deg, #4fd8ff 0%, #7fb2ff 25%, #c79bff 55%, #ff8f6b 80%, #ff6b4a 100%); }
+.spectrum span { position: absolute; top: 4px; font: 500 .55rem var(--mono); color: var(--ink-3); opacity: 0; transition: opacity .3s; pointer-events: none; }
+.nav:hover .spectrum span { opacity: .8; }
+@supports (animation-timeline: scroll()) {
+  .spectrum i { animation: fillbar linear both; animation-timeline: scroll(root); }
+  @keyframes fillbar { to { transform: scaleX(1); } }
+}
+@media (max-width: 1080px) { .nav nav a i { display: none; } }
+@media (max-width: 900px) { .nav nav { display: none; } .nav .wrap { grid-template-columns: 1fr auto; } }
+@media (max-width: 420px) { .wordmark span { display: none; } }
 
 .hero { position: relative; min-height: min(92vh, 900px); display: grid; align-items: center; overflow: hidden; isolation: isolate; }
 #sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
@@ -78,7 +100,7 @@ em { font-family: var(--display); font-style: italic; color: var(--ir); font-wei
 .facts dt { font: 600 .6rem var(--sans); font-stretch: 125%; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3); }
 .facts dd { margin: .3rem 0 0; font: 400 clamp(1.6rem, 3vw, 2.3rem)/1 var(--display); font-variant-numeric: tabular-nums; }
 .facts dd small { font: 500 .7rem var(--mono); color: var(--ink-3); margin-left: .3rem; }
-@media (max-width: 720px) { .facts { grid-template-columns: 1fr 1fr; row-gap: 1.2rem; } .nav nav { display: none; } }
+@media (max-width: 720px) { .facts { grid-template-columns: 1fr 1fr; row-gap: 1.2rem; } }
 
 .micro { overflow: hidden; white-space: nowrap; border-block: 1px solid var(--rule); background: rgba(255, 107, 74, 0.04); }
 .micro span { display: inline-block; padding: .38rem 0; font: 500 .6rem var(--mono); letter-spacing: .28em; text-transform: uppercase; color: rgba(233, 237, 247, 0.42); animation: micro 120s linear infinite; }
@@ -239,12 +261,14 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
   <div class="wrap">
     <a class="logo" href="#top" aria-label="SPHEREx Moving Sky home">
       <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" class="mark"><defs><linearGradient id="lgIR" x1="4" y1="6" x2="28" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4fd8ff"/><stop offset=".55" stop-color="#c79bff"/><stop offset="1" stop-color="#ff6b4a"/></linearGradient></defs><circle cx="16" cy="16" r="13" stroke="url(#lgIR)" stroke-width="2.2"/><path d="M7.6 21.4 L12.3 18.9 L17 16.4" stroke="#e9edf7" stroke-opacity=".55" stroke-width="1" stroke-dasharray="1.4 1.6" stroke-linecap="round"/><circle cx="7.6" cy="21.4" r="1.05" fill="#e9edf7" fill-opacity=".35"/><circle cx="12.3" cy="18.9" r="1.3" fill="#e9edf7" fill-opacity=".65"/><circle cx="19.2" cy="15.2" r="1.9" fill="#ff6b4a"/><path d="M15.6 12.9v-1.3h1.3M22.8 12.9v-1.3h-1.3M15.6 17.5v1.3h1.3M22.8 17.5v1.3h-1.3" stroke="#ff6b4a" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      SPHEREx Moving Sky
+      <span class="wordmark"><b>SPHEREx</b><span>/ moving sky</span></span>
     </a>
-    <nav aria-label="Sections">
-      <a href="#blink">Blink</a><a href="#planetx">Planet X</a><a href="#tracks">Tracks</a><a href="#spectra">Spectra</a><a href="#live">Live</a><a href="#proof">Proof</a><a href="#method">Method</a>
+    <nav aria-label="Sections" id="secnav">
+      <a href="#blink"><i>01</i>Blink</a><a href="#planetx"><i>02</i>Planet X</a><a href="#tracks"><i>03</i>Tracks</a><a href="#spectra"><i>04</i>Spectra</a><a href="#live"><i>05</i>Live</a><a href="#proof"><i>06</i>Proof</a><a href="#method"><i>07</i>Method</a>
     </nav>
+    <div class="clock" aria-label="Current time in UTC and Modified Julian Date"><span><span class="dot" aria-hidden="true"></span><b id="utc">--:--:--</b> UTC</span><span>MJD <b id="mjd">-----.-----</b></span></div>
   </div>
+  <div class="spectrum" aria-hidden="true"><i id="specbar"></i><span style="left:8px">0.75 µm</span><span style="right:8px">5.0 µm</span></div>
 </header>
 
 <main id="top">
@@ -259,7 +283,7 @@ footer a { color: var(--ink-2); text-decoration-color: var(--ir); text-underline
         <a class="btn ghost press" href="#planetx">Planet X mode</a>
         <a class="btn ghost press" href="#live">Query NASA live</a>
       </div>
-      <!--facts:start--><dl class="facts" id="facts"><div><dt>Fields searched</dt><dd>6<small>2.16 deg²</small></dd></div><div><dt>JPL predictions checked</dt><dd>2,762</dd></div><div><dt>Bright asteroids recovered</dt><dd>94%<small>83/88 · V<17</small></dd></div><div><dt>Unidentified vs. chance</dt><dd>1<small>vs 3.06 expected</small></dd></div></dl><!--facts:end-->
+      <!--facts:start--><dl class="facts" id="facts"><div><dt>Fields searched</dt><dd>6<small>2.16 deg²</small></dd></div><div><dt>JPL predictions checked</dt><dd>2,762</dd></div><div><dt>Bright asteroids recovered</dt><dd>94%<small>83/88 · V<17</small></dd></div><div><dt>Unidentified vs. chance</dt><dd>0<small>vs 1.67 expected</small></dd></div></dl><!--facts:end-->
       <noscript><p class="lede" style="margin-top:1rem">This page needs JavaScript for the interactive viewer. The numbers above are measured; the full method is on GitHub.</p></noscript>
     </div>
   </section>
@@ -507,6 +531,27 @@ const store = { get(k) { try { return localStorage.getItem(k); } catch { return 
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+})();
+
+/* ---------- Header: mission clock, section spy, spectrum progress ---------- */
+(function header() {
+  const tick = () => {
+    const now = Date.now();
+    $('utc').textContent = new Date(now).toISOString().slice(11, 19);
+    $('mjd').textContent = (now / 864e5 + 40587).toFixed(5);
+  };
+  tick(); setInterval(tick, 1000);
+  const links = [...document.querySelectorAll('#secnav a')];
+  const byId = Object.fromEntries(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const spy = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) links.forEach(a => a.setAttribute('aria-current', a === byId[e.target.id]));
+  }), { rootMargin: '-45% 0px -50% 0px' });
+  Object.keys(byId).forEach(id => { const el = document.getElementById(id); if (el) spy.observe(el); });
+  if (!CSS.supports('animation-timeline: scroll()')) {  // fallback for browsers without scroll timelines
+    const bar = $('specbar');
+    const upd = () => { const h = document.documentElement; bar.style.transform = `scaleX(${h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)})`; };
+    addEventListener('scroll', upd, { passive: true }); upd();
+  }
 })();
 
 /* ---------- Data ---------- */

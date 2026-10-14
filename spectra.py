@@ -11,13 +11,14 @@ import json, warnings
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import spherex as S
-from recover import Visit, measure
+from recover import Visit, measure, measure_psf
 
 warnings.filterwarnings("ignore", module="astropy")
 OMEGA = (6.15 / 206265) ** 2   # sr per pixel
 AP_SPEC = 3.0                  # px; the real PSF puts > 99.6% of the light inside this at every wavelength
 SNR_SPEC = 3.0
 ROT_MAG = 0.15                 # mag; typical asteroid spin brightness swing between visits hours apart
+KNEE = 2.5                     # um; reflectance slope fitted below this, held flat beyond
 
 
 def track(points):
@@ -47,25 +48,64 @@ def spectrum(name, points, max_images=64):
         if not p:
             return None
         img, var, dx, dy = v.stamp(*p)
-        m = measure(img, var, dx, dy, ap_r=AP_SPEC)
+        kernel = v.fits.psf_kernel(*p, dx, dy)     # this image's own PSF, for this detector zone
+        m = measure_psf(img, var, dx, dy, kernel)  # optimal (PSF-weighted) extraction
         if not m or m["snr"] < SNR_SPEC:
             return None
         wave, bw = v.fits.wavelength(*p)
         if not np.isfinite(wave):
             return None
-        corr = v.fits.ap_correction(*p, AP_SPEC)   # from this image's own PSF, for this detector zone
-        f = m["flux"] * OMEGA * 1e12 * corr        # MJy -> microJansky, aperture-corrected
+        omega = v.fits.pixel_area_sr(v.wcs, *p)    # local pixel solid angle from the TAN-SIP Jacobian
+        f = m["flux"] * omega * 1e12               # sum of MJy/sr x sr -> MJy -> microJansky
         return {"wave": round(wave, 4), "bw": round(bw, 4), "flux": round(f, 2), "err": round(f / m["snr"], 2),
                 "snr": round(m["snr"], 1), "mjd": round(v.mjd, 5), "det": row["energy_bandpassname"][-2:], "obs": v.id,
-                "apcorr": round(corr, 4), "visit": v.id.rsplit("_", 1)[0]}
+                "omega_rel": round(omega / OMEGA, 4), "visit": v.id.rsplit("_", 1)[0]}
 
     with ThreadPoolExecutor(4) as ex:
         pts = [p for p in ex.map(one, rows) if p]
+    r_au, phase = geometry(name, float(np.mean([p[0] for p in points])))
     sp = {"name": name, "n_images": len(rows), "points": sorted(pts, key=lambda p: p["wave"]),
-          "r_au": helio_r(name, float(np.mean([p[0] for p in points])))}
+          "r_au": r_au, "phase_deg": phase, "photometry": "psf"}
     sp["model"] = fit_model(sp["points"], sp["r_au"])
     sp["jpl"] = sbdb(name)
     return sp
+
+
+def slope_albedo_test(specs, trials=1000, seed=3):
+    """Spearman rho between fitted slope and JPL albedo, with Monte Carlo over photometric noise
+    plus a per-visit spin offset (ROT_MAG), refitting every slope each trial.
+
+    Selection (stated, objective): spectra with a model fit (>= 6 points spanning >= 2.5 um) and a
+    published SBDB albedo."""
+    rng = np.random.default_rng(seed)
+    use = [sp for sp in specs if sp.get("model") and sp.get("jpl", {}).get("albedo")]
+    if len(use) < 5:
+        return None
+    alb = np.array([float(sp["jpl"]["albedo"]) for sp in use])
+    rank = lambda a: np.argsort(np.argsort(a))
+    rho = lambda a, b: float(np.corrcoef(rank(a), rank(b))[0, 1])
+    nominal = np.array([sp["model"]["slope_per_um"] for sp in use])
+    r0 = rho(nominal, alb)
+    perm_p = float(np.mean([abs(rho(nominal, rng.permutation(alb))) >= abs(r0) for _ in range(20000)]))
+    rhos = []
+    for _ in range(trials):
+        slopes = []
+        for sp in use:
+            pts = sp["points"]
+            offs = {v: 10 ** (-0.4 * rng.normal(0, ROT_MAG)) for v in {p.get("visit") for p in pts}}
+            pert = [{**p, "flux": p["flux"] * offs[p.get("visit")] + rng.normal(0, p["err"])} for p in pts]
+            m = fit_model(pert, sp["r_au"])
+            slopes.append(m["slope_per_um"] if m else np.nan)
+        slopes = np.array(slopes)
+        ok = np.isfinite(slopes)
+        if ok.sum() >= 5:
+            rhos.append(rho(slopes[ok], alb[ok]))
+    lo, med, hi = np.percentile(rhos, [16, 50, 84])
+    return {"n": len(use), "n_spectra": sum(1 for sp in specs if sp.get("points")), "rho": round(r0, 2),
+            "perm_p": round(perm_p, 3), "mc_median": round(float(med), 2), "mc_16": round(float(lo), 2),
+            "mc_84": round(float(hi), 2), "mc_frac_positive": round(float(np.mean(np.array(rhos) > 0)), 3),
+            "trials": len(rhos), "selection": "model fit (>= 6 points over >= 2.5 um) and published SBDB albedo",
+            "phase_deg": [sp.get("phase_deg") for sp in use]}
 
 
 def sbdb(name):
@@ -92,30 +132,38 @@ def bb_fnu(um, T):
     return nu ** 3 / np.expm1(6.626e-34 * nu / (1.381e-23 * T))
 
 
-def helio_r(name, mjd):
-    """Sun distance (au) of a numbered asteroid at mjd, from JPL Horizons."""
+def geometry(name, mjd):
+    """(Sun distance au, solar phase angle deg) of a numbered body at mjd, seen from SPHEREx (JPL Horizons)."""
     num = name.split()[0]
     def fetch():
         body, _ = S.get("https://ssd.jpl.nasa.gov/api/horizons.api", {
             "format": "json", "COMMAND": f"'{num};'", "MAKE_EPHEM": "'YES'", "EPHEM_TYPE": "'OBSERVER'",
             "CENTER": "'500@-163182'", "TLIST": f"'{mjd + 2400000.5}'", "TLIST_TYPE": "'JD'",
-            "QUANTITIES": "'19'", "CSV_FORMAT": "'YES'", "OBJ_DATA": "'NO'"})
+            "QUANTITIES": "'19,24'", "CSV_FORMAT": "'YES'", "OBJ_DATA": "'NO'"})
         return json.loads(body)
     try:
-        res = S.cached_json(f"helio_{num}_{mjd:.3f}.json", fetch)["result"]
-        row = res.split("$$SOE")[1].split("$$EOE")[0].strip().split(",")
-        return round(float(row[-3]), 4)
+        res = S.cached_json(f"geom_{num}_{mjd:.3f}.json", fetch)["result"]
+        head = res.split("$$SOE")[0].strip().splitlines()[-2]   # column names line
+        cols = [c.strip() for c in head.split(",")]
+        row = [c.strip() for c in res.split("$$SOE")[1].split("$$EOE")[0].strip().split(",")]
+        return round(float(row[cols.index("r")]), 4), round(float(row[cols.index("S-T-O")]), 2)
     except Exception:
-        return None
+        return None, None
+
+
+def helio_r(name, mjd):
+    return geometry(name, mjd)[0]
 
 
 def fit_model(pts, r_au):
     """Reflected sunlight with a linear spectral slope + one blackbody for the asteroid's heat.
 
-    F(l) = A * sun(l) * (1 + s * (l - 1 um)) + B * BB(l, T). A, A*s, B are linear; T is
+    F(l) = A * sun(l) * (1 + s * (min(l, 2.5 um) - 1 um)) + B * BB(l, T). A, A*s, B are linear; T is
     grid-searched. Errors include a ROT_MAG spin term, since points come from different visits.
-    ponytail: a single-temperature blackbody, not a thermal model (NEATM) with albedo and
-    beaming; enough to separate reflected light from heat, not to measure sizes."""
+    The free amplitude B absorbs the unknown diameter (D^2/Delta^2) and the hemisphere-integration
+    factor of a T_ss*cos(theta)^(1/4) surface, so the fixed-T_ss curve adds no degenerate parameter.
+    ponytail: a single-temperature blackbody, not full NEATM; enough to separate reflected light
+    from heat, not to measure sizes or albedos."""
     if len(pts) < 6 or max(p["wave"] for p in pts) - min(p["wave"] for p in pts) < 2.5:
         return None
     lam = np.array([p["wave"] for p in pts]); f = np.array([p["flux"] for p in pts])
@@ -124,8 +172,9 @@ def fit_model(pts, r_au):
     # T from the Sun distance (subsolar temperature, beaming eta=1.2); a free T is degenerate with
     # the heat amplitude when only the last detector constrains it. Grid-search only if r is unknown.
     temps = [394 / np.sqrt(r_au) * 1.2 ** -0.25] if r_au else np.arange(120, 451, 5)
+    lc = np.minimum(lam, KNEE) - 1
     for T in temps:
-        X = np.stack([sun_fnu(lam), sun_fnu(lam) * (lam - 1), bb_fnu(lam, T)], 1) / sig[:, None]
+        X = np.stack([sun_fnu(lam), sun_fnu(lam) * lc, bb_fnu(lam, T)], 1) / sig[:, None]
         coef, *_ = np.linalg.lstsq(X, f / sig, rcond=None)
         if coef[0] <= 0 or coef[2] < 0:
             continue
@@ -136,7 +185,7 @@ def fit_model(pts, r_au):
         return None
     chi2, T, (a, a_s, b) = best
     grid = np.geomspace(0.75, 5.0, 60)
-    refl, heat = a * sun_fnu(grid) * (1 + a_s / a * (grid - 1)), b * bb_fnu(grid, T)
+    refl, heat = a * sun_fnu(grid) * (1 + a_s / a * (np.minimum(grid, KNEE) - 1)), b * bb_fnu(grid, T)
     i48 = int(np.argmin(abs(grid - 4.8)))
     return {"T": round(float(T)), "T_fixed": bool(r_au), "slope_per_um": round(float(a_s / a), 3), "chi2_dof": round(chi2 / max(len(pts) - 4, 1), 2),
             "thermal_frac_4p8": round(float(heat[i48] / (heat[i48] + refl[i48])), 2),
@@ -146,6 +195,9 @@ def fit_model(pts, r_au):
 
 
 if __name__ == "__main__":
+    # the reflectance continuum is continuous at the 2.5 um knee (flat part pinned to the slope's value)
+    refl = lambda lam, s: 1 + s * (np.minimum(lam, KNEE) - 1)
+    assert abs(refl(KNEE - 1e-9, 0.2) - refl(KNEE + 1e-9, 0.2)) < 1e-9 and refl(4.0, 0.2) == refl(KNEE, 0.2)
     f = track([(0.0, 10.0, 1.0), (1.0, 11.0, 1.5), (2.0, 12.0, 2.0)])
     assert np.allclose(f(1.5), (11.5, 1.75))
     # demo: 872 Holda through the May 2025 pass, positions from the recovery test

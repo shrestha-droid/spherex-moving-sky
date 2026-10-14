@@ -82,11 +82,12 @@ class Region:
         return out
 
 
-def seeds(reg, img, others=(), require_outlier=True):
+def seeds(reg, img, others=(), require_outlier=True, min_gap_h=0.0, funnel=None):
     """Point sources in one visit -> [{ra, dec, x, y, snr, flux, stamp}].
 
     Fast mode: must touch an MP_OUTLIER pixel. Slow mode: must be absent (< half as bright)
-    in the median of the other visits at the same sky spot."""
+    in the median of the other visits at the same sky spot, using only visits at least
+    min_gap_h hours away so a slow mover cannot subtract itself. others: [(Region, image)]."""
     v, flg, var = reg.v, reg.flg, reg.var
     f = np.nan_to_num(img, nan=-np.inf)
     pad = np.pad(f, 1, constant_values=-np.inf)
@@ -97,10 +98,19 @@ def seeds(reg, img, others=(), require_outlier=True):
         near_outlier |= po[1 + dy:1 + dy + f.shape[0], 1 + dx:1 + dx + f.shape[1]]
         if dy or dx:
             peak &= f > pad[1 + dy:1 + dy + f.shape[0], 1 + dx:1 + dx + f.shape[1]]
-    ok = peak & ((flg & (SOURCE | BAD)) == 0) & np.isfinite(img)
+    bad3 = np.zeros_like(f, bool)  # bad, persistent or dichroic pixel anywhere in the 3x3 core
+    pb = np.pad((flg & BAD) != 0, 1)
+    for dy, dx in itertools.product((-1, 0, 1), repeat=2):
+        bad3 |= pb[1 + dy:1 + dy + f.shape[0], 1 + dx:1 + dx + f.shape[1]]
+    inner = np.zeros_like(f, bool)
+    inner[R:-R, R:-R] = True
+    raw = peak & np.isfinite(img) & inner
+    ok = raw & ((flg & SOURCE) == 0) & ~bad3
     if require_outlier:
         ok &= near_outlier
-    ok[:R, :] = ok[-R:, :] = ok[:, :R] = ok[:, -R:] = False
+    if funnel is not None:
+        funnel["local_peaks"] = funnel.get("local_peaks", 0) + int(raw.sum())
+        funnel["uncatalogued_unflagged"] = funnel.get("uncatalogued_unflagged", 0) + int(ok.sum())
     out = []
     for yy, xx in zip(*np.nonzero(ok)):
         st, sv = img[yy - R:yy + R + 1, xx - R:xx + R + 1], var[yy - R:yy + R + 1, xx - R:xx + R + 1]
@@ -111,15 +121,22 @@ def seeds(reg, img, others=(), require_outlier=True):
         m = measure(st, sv, dx, dy)
         if not m or m["snr"] < SNR_MIN:
             continue
+        if funnel is not None:
+            funnel["snr_ge_5"] = funnel.get("snr_ge_5", 0) + 1
         x, y = reg.x0 + xx + dx, reg.y0 + yy + dy
         ra, dec = (float(c) for c in v.wcs.pixel_to_world_values(x, y))
         out.append({"visit": v.id, "mjd": v.mjd, "ra": ra, "dec": dec, "x": float(x), "y": float(y),
                     "snr": round(m["snr"], 1), "flux": m["flux"]})
-    if not require_outlier and others and out:
-        here = reg.ap_flux(np.array([d["ra"] for d in out]), np.array([d["dec"] for d in out]), img)
-        elsewhere = np.nanmedian(np.array([o.ap_flux(np.array([d["ra"] for d in out]), np.array([d["dec"] for d in out]))
-                                           for o in others]), axis=0)
+    far = [(o, oi) for o, oi in others if abs(o.v.mjd - v.mjd) * 24 >= min_gap_h]
+    if not require_outlier and out:
+        if len(far) < 2:
+            return []  # cannot tell a slow mover from a faint star without distant visits
+        ras, decs = np.array([d["ra"] for d in out]), np.array([d["dec"] for d in out])
+        here = reg.ap_flux(ras, decs, img)
+        elsewhere = np.nanmedian(np.array([o.ap_flux(ras, decs, oi) for o, oi in far]), axis=0)
         out = [d for d, h, e in zip(out, here, elsewhere) if np.isfinite(e) and e < 0.5 * h]
+    if funnel is not None:
+        funnel["seeds"] = funnel.get("seeds", 0) + len(out)
     return out
 
 
@@ -173,7 +190,17 @@ def link(dets, ra0, dec0, min_visits=3, min_rate=2.0, max_rate=150.0, tol=LINK_T
               "rms": round(float(np.sqrt(np.mean(res ** 2))), 2)}
         same_pixel = any(np.hypot(p["x"] - q["x"], p["y"] - q["y"]) < DETECTOR_TOL
                          for p, q in itertools.combinations(pts, 2) if "x" in p and "x" in q)
-        (rejected if same_pixel else out).append(tr)
+        # a moving object is not at the same sky spot in other visits; a static (e.g. very red,
+        # chromatic) source or a star residual is
+        stationary = any(np.any((np.hypot(E - p["e"], N - p["n"]) < 1.5 * PIX) &
+                                np.array([d["visit"] != p["visit"] for d in dets]) &
+                                ~np.isin(np.arange(len(dets)), list(t)))
+                         for p in pts)
+        if same_pixel or stationary:
+            tr["reason"] = "same detector pixel" if same_pixel else "stationary on sky"
+            rejected.append(tr)
+        else:
+            out.append(tr)
     return out, rejected
 
 
@@ -329,14 +356,16 @@ def run(ra0, dec0, box, det, days, pass_index=0, out_dir="web", rows=None, slow=
     os.makedirs(f"{out_dir}/img", exist_ok=True)
     with ThreadPoolExecutor(4) as ex:
         regions = dict(zip([v.id for v in vs], ex.map(lambda v: Region(v, gw, n), vs)))
-    def search(imgs):
+    min_gap_h = 2 * PIX / mode["min_rate"] if slow else 0.0  # slowest mover must have moved >= 2 px
+    def search(imgs, funnel=None):
         dets = []
         for vid, r in regions.items():
-            others = [o for k, o in regions.items() if k != vid]
-            dets += seeds(r, imgs[vid], others, require_outlier=not slow)
+            others = [(o, imgs[k]) for k, o in regions.items() if k != vid]
+            dets += seeds(r, imgs[vid], others, require_outlier=not slow, min_gap_h=min_gap_h, funnel=funnel)
         tracks, rejected = link(dets, ra0, dec0, **mode)
         return dets, tracks, rejected
-    dets, tracks, rejected = search({vid: r.img for vid, r in regions.items()})
+    funnel = {}
+    dets, tracks, rejected = search({vid: r.img for vid, r in regions.items()}, funnel)
     frames = []
     for vid, r in regions.items():
         sky = resample(r, gw, n)
@@ -354,6 +383,9 @@ def run(ra0, dec0, box, det, days, pass_index=0, out_dir="web", rows=None, slow=
         tracks = [vet(t) if t["status"] == "candidate" else t for t in tracks]
     for t in tracks + rejected:
         vetting_stamps(t, regions)
+    for t in tracks:
+        for p in t["points"]:
+            p["obs_pos"] = [round(c, 3) for c in S.spherex_xyz(p["mjd"])[:3]]  # geocentric ICRF km
     half = n * PIX / 2
     def in_grid(k):
         e, nn = tangent(k["ra"], k["dec"], ra0, dec0)
@@ -377,11 +409,13 @@ def run(ra0, dec0, box, det, days, pass_index=0, out_dir="web", rows=None, slow=
                for vid, ks in known.items()}
     out = {"field": {"ra": ra0, "dec": dec0, "box_deg": box, "detector": det, "n": n, "pix": PIX,
                      "mode": "slow" if slow else "fast", **mode},
-           "frames": frames, "tracks": tracks, "known": overlay,
-           "rejected": [{"rate": t["rate"], "rms": t["rms"], "points": t["points"]} for t in rejected],
+           "frames": frames, "tracks": tracks, "known": overlay, "min_gap_h": round(min_gap_h, 1),
+           "rejected": [{"rate": t["rate"], "rms": t["rms"], "reason": t.get("reason"), "points": t["points"]} for t in rejected],
            "score": {"expected": expected, "found": found,
                      "candidates": sum(t["status"] == "candidate" for t in tracks),
-                     "seeds": len(dets), "false_alarms": round(fa, 2), "artifacts": len(rejected)}}
+                     "seeds": len(dets), "false_alarms": round(fa, 2), "artifacts": len(rejected),
+                     "funnel": funnel, "rejected_by": {k: sum(t.get("reason") == k for t in rejected)
+                                                      for k in ("same detector pixel", "stationary on sky")}}}
     if injection:
         curve = []
         for i, m in enumerate(injection["mags"]):  # one magnitude at a time, so fakes never crowd each other
@@ -389,7 +423,13 @@ def run(ra0, dec0, box, det, days, pass_index=0, out_dir="web", rows=None, slow=
                                  injection["per_mag"], seed=7 + i)
             _, itracks, _ = search(imgs)
             sel = [tr for tr in truth if len(tr["pos"]) >= mode["min_visits"]]
-            curve.append({"mag_ab": m, "n": len(sel), "recovered": sum(recovered(tr, itracks, mode["min_visits"]) for tr in sel)})
+            hit = [recovered(tr, itracks, mode["min_visits"]) for tr in sel]
+            split = (mode["min_rate"] + mode["max_rate"]) / 3  # 1"/h in slow mode
+            row = {"mag_ab": m, "n": len(sel), "recovered": sum(hit)}
+            for name, keep in (("slow", lambda r: r < split), ("fast", lambda r: r >= split)):
+                k = [h for tr, h in zip(sel, hit) if keep(tr["rate"])]
+                row[f"n_{name}"], row[f"rec_{name}"] = len(k), sum(k)
+            curve.append(row)
         out["injection"] = curve
         print("  injection:", " ".join(f"AB{c['mag_ab']}:{c['recovered']}/{c['n']}" for c in curve), flush=True)
     return out
@@ -405,6 +445,11 @@ if __name__ == "__main__":
         p["x"], p["y"] = 100.0, 50.0  # same detector pixel in every visit: a defect riding the pointing
     tr, rej = link(d, 180, 0)
     assert not tr and len(rej) == 1
+    for i, p in enumerate(d[:3]):
+        p["x"], p["y"] = 100 + 40 * i, 50.0
+    d.append({"visit": "d", "mjd": 3.0, "ra": 180 + 300 / 3600, "dec": 0.0, "x": 900.0, "y": 900.0})  # static source on point b's spot
+    tr, rej = link(d, 180, 0)
+    assert not tr and rej and rej[0]["reason"] == "stationary on sky", rej
     ra = float(sys.argv[1]) if len(sys.argv) > 1 else 180.0
     dec = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
     box = float(sys.argv[3]) if len(sys.argv) > 3 else 1.3

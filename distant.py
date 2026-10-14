@@ -16,7 +16,8 @@ from recover import Visit, measure, BAD, R
 
 TARGETS = [("136472", "Makemake"), ("136108", "Haumea")]
 WINDOW_DAYS = 10
-BOX = 0.35
+BOX = 0.8                 # deg; wide field, not a postage stamp around the target
+OFFSET = (0.17, -0.13)    # deg (east, north): the target is deliberately not at the box centre
 INJECT = dict(mags=[14.5, 15.0, 15.5, 16.0, 16.5, 17.0, 17.5, 18.0, 18.5], per_mag=8)
 
 
@@ -97,7 +98,8 @@ def run_target(cmd, name):
     if len(win) < detect.SLOW["min_visits"]:
         return {"name": name, "visits": len(win), "skipped": True}
     ras, decs = [w[1][0] for w in win], [w[1][1] for w in win]
-    ra0, dec0 = round(float(np.mean(ras)), 4), round(float(np.mean(decs)), 4)
+    dec0 = round(float(np.mean(decs)) + OFFSET[1], 4)
+    ra0 = round(float(np.mean(ras)) + OFFSET[0] / np.cos(np.radians(dec0)), 4)
     eph = {w[0]["obs_id"]: w[1] for w in win}
     known_fn = lambda v: [{"name": name, "ra": eph[v.id][0], "dec": eph[v.id][1], "vmag": eph[v.id][2]}] if v.id in eph else []
     out_dir = f"web/planetx/{name.lower()}"
@@ -112,6 +114,10 @@ def run_target(cmd, name):
     found = name in det["score"]["found"]
     print(f"  blind search found {name}: {found}; forced SNR per visit: {[f['snr'] for f in det['forced']]}", flush=True)
     return {"name": name, "id": cmd, "dir": f"planetx/{name.lower()}/", "found": found, "visits": len(win),
+            "area_deg2": round(BOX ** 2, 3), "seeds": det["score"]["seeds"], "offset_deg": OFFSET,
+            "funnel": det["score"].get("funnel"), "rejected_by": det["score"].get("rejected_by"),
+            "min_gap_h": det.get("min_gap_h"),
+            "other_tracks": [t["known"] or "unidentified" for t in det["tracks"] if t["known"] != name],
             "target": det["target"], "tracks": len(det["tracks"]), "candidates": det["score"]["candidates"],
             "false_alarms": det["score"]["false_alarms"], "artifacts": det["score"]["artifacts"],
             "injection": det.get("injection"), "forced": det["forced"]}
