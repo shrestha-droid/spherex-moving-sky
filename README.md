@@ -1,26 +1,32 @@
-# Planet X and SPHEREx
+# SPHEREx Moving Sky
 
 NASA Space Apps Challenge 2026: [Planet X and SPHEREx](https://www.spaceappschallenge.org/2026/challenges/planet-x-and-spherex/).
 
-The goal is a public web tool that shows how the SPHEREx sky changes over time. It finds moving objects and proves the detector works by recovering known asteroids.
+This public web tool blinks the SPHEREx sky across visits and finds moving objects automatically. It then proves the detector works by recovering known asteroids from JPL's catalogue.
 
-## Data sources
-| What | Where |
-|---|---|
-| SPHEREx QR2 spectral images (2040² px, 6.15″/px, 3.5° field, detectors D1–D6 cover 0.75–5 µm) | [IRSA SIA](https://irsa.ipac.caltech.edu/SIA) collection `spherex_qr2`. Cutouts come from `access_url?center=RA,DECdeg&size=Ndeg` |
-| SPHEREx position (Horizons ID `-163182`) | [JPL Horizons API](https://ssd-api.jpl.nasa.gov/doc/horizons.html) |
-| Known asteroids in a field, as seen from SPHEREx | [JPL sb_ident API](https://ssd-api.jpl.nasa.gov/doc/sb_ident.html) with `xobs` |
+- How it works (read this before judging): [HOW_IT_WORKS.md](HOW_IT_WORKS.md)
+- Pitch, video script and judge Q&A: [PITCH.md](PITCH.md)
 
-Please cite SPHEREx QR2 as DOI [10.26131/IRSA652](https://doi.org/10.26131/IRSA652).
-
-## Spike (metadata only, no downloads)
+## Run
 ```bash
-python3 spike.py 180 0 1   # RA, Dec, detector
+python3 -m venv .venv && .venv/bin/pip install numpy astropy
+.venv/bin/python recover.py 180 0 1 2.6          # known-asteroid recovery -> web/recovery.json
+.venv/bin/python detect.py 179.66 0.80 0.7 1 2.6 # blind search -> web/detections.json + web/img/
+python3 -m http.server 8000 -d web              # open http://localhost:8000
 ```
-For the ecliptic field at RA 180°, Dec 0°, the spike found 55 D1 images spread over 3 sky passes. JPL predicts 21 known asteroids brighter than V=19 in the first image. Exposures come in bursts of 4 frames about 2 minutes apart. The same field is seen again hours later and again 6 months later.
+The arguments are RA and Dec in degrees, the box size in degrees (for `detect.py` only), the detector (1–6), and the number of days of visits.
 
-## Plan
-1. **Recovery test.** Take cutouts at JPL-predicted positions in two images about 10 hours apart, then check whether the asteroid is present in one and absent in the other. Report recovered / predicted.
-2. **Blind detector.** Difference images from the same epoch, with the wavelength mismatch handled. SPHEREx's linear variable filter means each pixel sees a different wavelength. Then link detections into tracks.
-3. **Score.** Cross-match tracks against sb_ident. Unmatched tracks become *candidates*, never claimed discoveries.
-4. **Web tool.** A blink and slider view of the same sky across epochs, with known asteroids and candidates overlaid and a recovery-rate scoreboard.
+Everything we download is cached in `data/`, which git ignores. A re-run makes no network calls.
+
+## Files
+| File | What it does |
+|---|---|
+| `spherex.py` | Data access: IRSA image search, SPHEREx position from JPL Horizons, known asteroids from JPL sb_ident, and `RemoteFits`, which reads pixel rectangles from remote FITS files with HTTP range requests |
+| `recover.py` | Measures each JPL-predicted asteroid at its predicted pixel and confirms it is gone in a later visit, giving a completeness curve |
+| `detect.py` | Blind search: outlier-flagged seeds, straight-line linking across 3 or more visits, then matching to JPL (known or candidate). Also writes the blink frames |
+| `web/index.html` | The viewer: blink player, track overlays, recovery chart and stamp gallery. No dependencies |
+
+Each script runs its own small self-checks (asserts) at the start.
+
+## Data credits
+SPHEREx Quick Release 2, NASA/IPAC Infrared Science Archive, [DOI 10.26131/IRSA652](https://doi.org/10.26131/IRSA652). JPL Horizons. JPL Small-Body Identification API.

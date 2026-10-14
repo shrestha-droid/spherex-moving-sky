@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPHEREx Moving Sky</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root { --bg:#05070d; --panel:#0d1220; --line:#1d2640; --fg:#e7ecf7; --muted:#8b96b3; --known:#3fd0ff; --cand:#ffb547; --pred:#7d87a6; --ok:#4ade80; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, sans-serif; }
+  main { max-width:1120px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:clamp(1.6rem, 4vw, 2.4rem); margin:0; letter-spacing:-.02em; }
+  h2 { font-size:1.1rem; margin:40px 0 12px; }
+  .lede { color:var(--muted); max-width:70ch; margin:8px 0 24px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .tile b { display:block; font-size:1.9rem; font-variant-numeric:tabular-nums; }
+  .tile span { color:var(--muted); font-size:.85rem; }
+  .viewer { display:grid; grid-template-columns:minmax(0, 1fr) 280px; gap:16px; }
+  @media (max-width:820px) { .viewer { grid-template-columns:1fr; } }
+  .sky { position:relative; background:#000; border:1px solid var(--line); border-radius:12px; overflow:hidden; aspect-ratio:1; }
+  .sky canvas { width:100%; height:100%; display:block; image-rendering:pixelated; }
+  .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+  button { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button[aria-pressed=true] { border-color:var(--known); color:var(--known); }
+  input[type=range] { flex:1; min-width:140px; accent-color:var(--known); }
+  .side { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .side label { display:flex; gap:8px; align-items:center; margin:6px 0; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .tracks { display:grid; gap:10px; }
+  .track { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; display:flex; gap:16px; flex-wrap:wrap; align-items:center; cursor:pointer; }
+  .track.sel { border-color:var(--cand); }
+  .stamps { display:flex; gap:6px; }
+  .stamps canvas { width:72px; height:72px; image-rendering:pixelated; border-radius:6px; border:1px solid var(--line); }
+  .badge { font-size:.75rem; padding:2px 8px; border-radius:99px; border:1px solid currentColor; }
+  .chart svg { width:100%; max-width:720px; height:auto; display:block; }
+  .pairs { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:10px; }
+  .pair { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; font-size:.82rem; }
+  .pair .stamps canvas { width:80px; height:80px; }
+  footer { margin-top:48px; color:var(--muted); font-size:.8rem; }
+  a { color:var(--known); }
+</style>
+</head>
+<body>
+<main>
+  <h1>SPHEREx Moving Sky</h1>
+  <p class="lede">NASA's SPHEREx telescope photographs the entire sky every six months. Things that move between those photos are asteroids, comets, and maybe something new. This tool finds them automatically, then checks itself against every known asteroid in JPL's catalogue.</p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Blink the sky</h2>
+  <div class="viewer">
+    <div>
+      <div class="sky"><canvas id="sky"></canvas></div>
+      <div class="controls">
+        <button id="play" aria-pressed="false">▶ Blink</button>
+        <input id="frame" type="range" min="0" value="0" step="1" aria-label="Visit">
+        <span id="when" class="muted"></span>
+      </div>
+    </div>
+    <div class="side">
+      <div class="legend">
+        <label><input type="checkbox" id="showKnown" checked><span><i style="background:var(--pred)"></i>JPL-predicted asteroids</span></label>
+        <label><input type="checkbox" id="showTracks" checked><span><i style="background:var(--known)"></i>Our tracks: known</span></label>
+        <label><input type="checkbox" id="showCand" checked><span><i style="background:var(--cand)"></i>Our tracks: candidate</span></label>
+      </div>
+      <p class="muted" id="fieldInfo"></p>
+      <p class="muted">Each frame is a separate SPHEREx exposure, resampled onto the same patch of sky. Stars stay still; moving dots are solar-system objects.</p>
+    </div>
+  </div>
+
+  <h2>Detected tracks</h2>
+  <div class="tracks" id="tracks"></div>
+
+  <h2>Does it work? Recovery of known asteroids</h2>
+  <p class="muted">For every asteroid JPL predicts inside an exposure, we measure the signal at the predicted pixel, then confirm the spot is empty hours later.</p>
+  <div class="chart" id="chart"></div>
+  <h2>Here, then gone</h2>
+  <div class="pairs" id="pairs"></div>
+
+  <footer>
+    Data: SPHEREx Quick Release QR2 via NASA/IPAC IRSA (DOI 10.26131/IRSA652) · Ephemerides: JPL Horizons and JPL Small-Body Identification API.
+    Unmatched tracks are <em>candidates</em>, not discoveries: they need follow-up before any claim.
+  </footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const mjdDate = m => new Date((m - 40587) * 864e5).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+
+function drawStamp(c, px, n) {
+  c.width = c.height = n;
+  const g = c.getContext('2d'), im = g.createImageData(n, n);
+  px.forEach((v, i) => { im.data.set([v, v, v, 255], i * 4); });
+  g.putImageData(im, 0, 0);
+}
+function stampCanvas(px, n, title) {
+  const c = document.createElement('canvas'); drawStamp(c, px, n);
+  const g = c.getContext('2d'), m = (n - 1) / 2;  // cyan ticks around the target pixel
+  g.fillStyle = '#3fd0ff';
+  for (const [x, y, w, h] of [[m - 4, m, 2, 1], [m + 3, m, 2, 1], [m, m - 4, 1, 2], [m, m + 3, 1, 2]]) g.fillRect(x, y, w, h);
+  if (title) c.title = title; return c;
+}
+
+Promise.all(['detections.json', 'recovery.json'].map(f => fetch(f).then(r => r.ok ? r.json() : null).catch(() => null)))
+.then(([det, rec]) => {
+  tiles(det, rec);
+  if (det) viewer(det);
+  if (rec) recovery(rec);
+});
+
+function tiles(det, rec) {
+  const t = [];
+  if (rec) {
+    const bright = rec.results.filter(r => r.vmag < 17 && r.status !== 'bad pixels');
+    const ok = bright.filter(r => r.status === 'recovered' || r.status === 'detected');
+    t.push([`${ok.length}/${bright.length}`, 'known asteroids V<17 recovered at predicted position']);
+    t.push([rec.results.length, 'JPL predictions checked']);
+  }
+  if (det) {
+    const s = det.score, hit = s.expected.filter(n => s.found.includes(n)).length;
+    t.push([`${hit}/${s.expected.length}`, 'bright known asteroids found blind (no hints)']);
+    t.push([s.candidates, 'unmatched candidate tracks']);
+  }
+  $('tiles').innerHTML = t.map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
+}
+
+function viewer(det) {
+  const n = det.field.n, frames = det.frames, imgs = frames.map(f => { const i = new Image(); i.src = f.img; return i; });
+  const c = $('sky'), g = c.getContext('2d'), scale = 2;
+  c.width = c.height = n * scale;
+  $('frame').max = frames.length - 1;
+  $('fieldInfo').textContent = `Field RA ${det.field.ra}°, Dec ${det.field.dec}° · ${det.field.box_deg}° box · detector D${det.field.detector} · ${frames.length} visits`;
+  let k = 0, timer = null, sel = null;
+
+  function draw() {
+    const f = frames[k];
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+    if (imgs[k].complete) g.drawImage(imgs[k], 0, 0, c.width, c.height);
+    $('when').textContent = `${k + 1}/${frames.length} · ${mjdDate(f.mjd)}`;
+    $('frame').value = k;
+    if ($('showKnown').checked) {
+      g.strokeStyle = 'rgba(125,135,166,.8)'; g.lineWidth = 1.5;
+      for (const a of det.known[f.id] || []) { g.beginPath(); g.arc(a.gx * scale, a.gy * scale, 9, 0, 7); g.stroke(); }
+    }
+    det.tracks.forEach((t, i) => {
+      const isCand = t.status === 'candidate';
+      if (isCand ? !$('showCand').checked : !$('showTracks').checked) return;
+      const col = isCand ? '#ffb547' : '#3fd0ff';
+      g.strokeStyle = col; g.lineWidth = sel === i ? 2.5 : 1.2; g.setLineDash([4, 4]);
+      g.beginPath(); t.points.forEach((p, j) => g[j ? 'lineTo' : 'moveTo'](p.gx * scale, p.gy * scale)); g.stroke(); g.setLineDash([]);
+      for (const p of t.points) {
+        const here = p.visit === f.id;
+        g.lineWidth = here ? 2.5 : 1; g.globalAlpha = here ? 1 : .45;
+        g.beginPath(); g.arc(p.gx * scale, p.gy * scale, here ? 14 : 6, 0, 7); g.stroke(); g.globalAlpha = 1;
+      }
+    });
+  }
+  imgs.forEach(i => i.onload = draw);
+  $('frame').oninput = e => { k = +e.target.value; draw(); };
+  ['showKnown', 'showTracks', 'showCand'].forEach(id => $(id).onchange = draw);
+  $('play').onclick = () => {
+    const on = !timer; $('play').setAttribute('aria-pressed', on); $('play').textContent = on ? '❚❚ Pause' : '▶ Blink';
+    if (on) timer = setInterval(() => { k = (k + 1) % frames.length; draw(); }, 700); else { clearInterval(timer); timer = null; }
+  };
+
+  const list = $('tracks');
+  if (!det.tracks.length) list.innerHTML = '<p class="muted">No tracks in this field.</p>';
+  det.tracks.forEach((t, i) => {
+    const el = document.createElement('div'); el.className = 'track';
+    const st = document.createElement('div'); st.className = 'stamps';
+    t.points.forEach(p => st.append(stampCanvas(p.stamp, det.field.n ? 21 : 21, `${p.visit} · SNR ${p.snr}`)));
+    const col = t.status === 'candidate' ? 'var(--cand)' : 'var(--known)';
+    el.innerHTML = `<div style="min-width:220px"><span class="badge" style="color:${col}">${t.status}</span>
+      <div style="margin-top:6px"><b>${t.known || 'Unidentified mover'}</b>${t.vmag ? ` · V ${t.vmag}` : ''}</div>
+      <div class="muted">${t.points.length} visits · ${t.rate}"/h · fit residual ${t.rms}"</div></div>`;
+    el.prepend(st);
+    el.onclick = () => { sel = sel === i ? null : i; [...list.children].forEach((c, j) => c.classList.toggle('sel', j === sel)); draw(); };
+    list.append(el);
+  });
+  draw();
+}
+
+function recovery(rec) {
+  const W = 640, H = 240, pad = 44, bins = rec.summary.filter(b => b.n), bw = (W - pad * 2) / bins.length;
+  const bars = bins.map((b, i) => {
+    const f = b.recovered / b.n, h = f * (H - pad * 2), x = pad + i * bw + 8, y = H - pad - h;
+    return `<rect x="${x}" y="${pad}" width="${bw - 16}" height="${H - pad * 2}" fill="#0d1220" rx="4"/>
+      <rect x="${x}" y="${y}" width="${bw - 16}" height="${h}" fill="#3fd0ff" rx="4"/>
+      <text x="${x + (bw - 16) / 2}" y="${y - 6}" fill="#e7ecf7" font-size="13" text-anchor="middle">${b.recovered}/${b.n}</text>
+      <text x="${x + (bw - 16) / 2}" y="${H - 12}" fill="#8b96b3" font-size="12" text-anchor="middle">${b.label.startsWith('V') ? b.label : 'V ' + b.label}</text>`;
+  }).join('');
+  $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Fraction of known asteroids recovered by brightness">${bars}
+    <text x="${pad}" y="20" fill="#8b96b3" font-size="12">Fraction recovered in one exposure (brighter → left)</text></svg>`;
+
+  const n = rec.field.stamp;
+  const best = {};
+  for (const r of rec.results) if (r.status === 'recovered' && r.cmp && (!best[r.name] || r.m.snr > best[r.name].m.snr)) best[r.name] = r;
+  const good = Object.values(best).sort((a, b) => a.vmag - b.vmag).slice(0, 12);
+  for (const r of good) {
+    const el = document.createElement('div'); el.className = 'pair';
+    const st = document.createElement('div'); st.className = 'stamps';
+    st.append(stampCanvas(r.stamp, n, 'At predicted position'), stampCanvas(r.cmp.stamp, n, 'Same sky, hours later'));
+    el.append(st);
+    el.insertAdjacentHTML('beforeend', `<div style="margin-top:6px"><b>${r.name}</b></div>
+      <div class="muted">V ${r.vmag} · SNR ${r.m.snr.toFixed(1)}<br>left: predicted spot · right: same sky later</div>`);
+    $('pairs').append(el);
+  }
+}
+</script>
+</body>
+</html>
