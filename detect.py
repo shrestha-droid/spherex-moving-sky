@@ -124,6 +124,23 @@ def link(dets, ra0, dec0, min_visits=3):
     return out
 
 
+def false_alarms(dets, ra0, dec0, trials=30, seed=1):
+    """Mean number of tracks linked after rotating each visit's seeds by a random angle.
+
+    Rotation keeps seed density but destroys real motion, so any track left is chance."""
+    rng = np.random.default_rng(seed)
+    counts = []
+    for _ in range(trials):
+        fake, ang = [], {}
+        for d in dets:
+            a = ang.setdefault(d["visit"], rng.uniform(0, 2 * np.pi))
+            e, n = tangent(d["ra"], d["dec"], ra0, dec0)
+            e, n = e * np.cos(a) - n * np.sin(a), e * np.sin(a) + n * np.cos(a)
+            fake.append({**d, "ra": ra0 + e / 3600 / np.cos(np.radians(dec0)), "dec": dec0 + n / 3600})
+        counts.append(len(link(fake, ra0, dec0)))
+    return float(np.mean(counts))
+
+
 def match(tracks, known_by_visit):
     """Label tracks with the JPL known asteroid most of their points sit on."""
     for t in tracks:
@@ -137,6 +154,29 @@ def match(tracks, known_by_visit):
         t["vmag"] = next((k["vmag"] for ks in known_by_visit.values() for k in ks if k["name"] == t["known"]), None)
         t["status"] = "known" if t["known"] else "candidate"
     return tracks
+
+
+def vet(t, tol=30.0):
+    """Deep JPL check for a candidate: no magnitude limit, comets included, around its middle point."""
+    p = t["points"][len(t["points"]) // 2]
+    def fetch():
+        xobs = ",".join(f"{v:.6f}" for v in S.spherex_xyz(p["mjd"]))
+        body, _ = S.get("https://ssd-api.jpl.nasa.gov/sb_ident.api", {
+            "xobs": xobs, "obs-time": f"{p['mjd'] + 2400000.5:.6f}", "mag-required": "false",
+            "fov-ra-center": S.sexa(p["ra"], hours=True), "fov-dec-center": S.sexa(p["dec"]),
+            "fov-ra-hwidth": 0.03, "fov-dec-hwidth": 0.03})
+        return json.loads(body)
+    res = S.cached_json(f"vet_{p['ra']:.5f}_{p['dec']:.5f}_{p['mjd']:.5f}.json", fetch)
+    fields = res.get("fields_first", [])
+    for row in res.get("data_first_pass", []):
+        r = dict(zip(fields, row))
+        ra = S.parse_sexa(row[1], hours=True)
+        dec = S.parse_sexa(row[2])
+        if np.hypot(*tangent(ra, dec, p["ra"], p["dec"])) < tol:
+            t.update(known=row[0], status="known (deep check)", vmag=r.get("Visual magnitude (V)"))
+            return t
+    t["vetted"] = True
+    return t
 
 
 def png(path, a):
@@ -178,9 +218,11 @@ def run(ra0, dec0, box, det, days):
         frames.append({"id": v.id, "mjd": v.mjd, "img": f"img/{v.id}.png"})
         print(f"  {v.id}: {len(s)} outlier seeds", flush=True)
     tracks = link(dets, ra0, dec0)
+    fa = false_alarms(dets, ra0, dec0)
+    print(f"  chance tracks expected (scrambled seeds): {fa:.2f}", flush=True)
     known = {v.id: S.known_asteroids(float(v.row["s_ra"]), float(v.row["s_dec"]), v.mjd, half_width=2.0, vmag=20)
              for v in vs}
-    tracks = match(tracks, known)
+    tracks = [vet(t) if t["status"] == "candidate" else t for t in match(tracks, known)]
     # known asteroids bright enough to see (V<17.5) that sit inside the grid in >= 3 visits: blind completeness
     half = n * PIX / 2
     def in_grid(k):
@@ -205,7 +247,7 @@ def run(ra0, dec0, box, det, days):
             "frames": frames, "tracks": tracks, "known": overlay,
             "score": {"expected": expected, "found": found,
                       "candidates": sum(t["status"] == "candidate" for t in tracks),
-                      "seeds": len(dets)}}
+                      "seeds": len(dets), "false_alarms": round(fa, 2)}}
 
 
 if __name__ == "__main__":

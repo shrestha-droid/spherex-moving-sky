@@ -122,7 +122,7 @@ function tiles(det, rec) {
   if (det) {
     const s = det.score, hit = s.expected.filter(n => s.found.includes(n)).length;
     t.push([`${hit}/${s.expected.length}`, 'bright known asteroids found blind (no hints)']);
-    t.push([s.candidates, 'unmatched candidate tracks']);
+    t.push([s.candidates, `unmatched candidate tracks (${s.false_alarms ?? '?'} expected by pure chance)`]);
   }
   $('tiles').innerHTML = t.map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
 }

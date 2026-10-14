@@ -39,7 +39,9 @@ Grouped by brightness (V magnitude), this gives the **completeness curve**: how 
 2. **Linking.** For every pair of seeds from two different visits, compute the speed. Keep it if it is between 2 and 150″/hour, which is the asteroid range. Then predict where that object would be in the other visits. If seeds are waiting there (within 12″), it's a **track**. We require **3 or more visits**. Noise and cosmic rays don't line up in a straight line three times.
 3. **Fit.** Fit straight-line motion to the track. The residual (RMS, in arcseconds) shows how clean the track is.
 4. **Identify.** Compare each track with JPL's predictions. A match makes it a **known** asteroid. If nothing matches, it is a **candidate**.
-5. **Score.** Of the bright known asteroids that crossed the region, how many did we find blind?
+5. **Deep check.** Each unmatched track gets a second JPL query with no brightness limit and comets included.
+6. **False-alarm test.** Rotate each visit's seeds by a random angle around the field center, 30 times, and count how many tracks still link. Rotation keeps the density of noise peaks but destroys real motion, so whatever links is pure chance. If we find N candidates and chance alone predicts about N, the candidates are not significant. We say so openly.
+7. **Score.** Of the bright known asteroids that crossed the region, how many did we find blind?
 
 ## 5. What a candidate is, and is not
 A candidate is a moving source with no match in JPL's catalogue at our search limits. It could be:
