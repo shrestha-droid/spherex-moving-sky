@@ -15,7 +15,8 @@ from http.server import BaseHTTPRequestHandler
 
 IRSA_FILES = "https://irsa.ipac.caltech.edu/ibe/data/spherex/"
 UA = {"User-Agent": "spherex-moving-sky/1.0 (NASA Space Apps 2026)"}
-MAX_HALF = 31
+MAX_HALF = 31          # 63 rows -> 63 ranges per request, well under typical MaxRanges (100-200)
+MAX_BODY = 4_000_000   # bytes; a cutout plus headers is ~50 KB, so anything bigger is refused
 
 
 class Log:
@@ -32,7 +33,12 @@ class Log:
         for attempt in range(3):  # NASA servers occasionally drop a connection under load
             try:
                 with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout) as r:
-                    body, status, ctype = r.read(), r.status, r.headers.get("Content-Type", "")
+                    status, ctype = r.status, r.headers.get("Content-Type", "")
+                    if rng and status != 206:  # server ignored Range (e.g. too many ranges): refuse the full file
+                        raise ValueError(f"upstream ignored the Range header (HTTP {status}); request a smaller cutout")
+                    body = r.read(MAX_BODY + 1)
+                    if len(body) > MAX_BODY:
+                        raise ValueError("upstream response too large")
                 break
             except (urllib.error.URLError, ConnectionError, TimeoutError):
                 if attempt == 2:
@@ -112,8 +118,8 @@ def world_to_pixel(h, ra, dec):
     return h["CRPIX1"] + U + du - 1, h["CRPIX2"] + V + dv - 1
 
 
-def read_rect(log, url, h, start, x0, y0, w, hh):
-    """float32 pixels [y0:y0+hh, x0:x0+w] in one multi-range request."""
+def read_rect(log, url, h, start, x0, y0, w, hh, typecode="f"):
+    """Pixels [y0:y0+hh, x0:x0+w] (float32 'f' or int32 'i') in one multi-range request."""
     nx = h["NAXIS1"]
     spans = [(start + (y * nx + x0) * 4, start + (y * nx + x0 + w) * 4 - 1) for y in range(y0, y0 + hh)]
     body, ctype = log.get(url, rng="bytes=" + ",".join(f"{a}-{b}" for a, b in spans))
@@ -133,10 +139,14 @@ def read_rect(log, url, h, start, x0, y0, w, hh):
         parts[spans[0][0]] = body
     rows = []
     for a, _ in spans:
-        arr = array("f", parts[a])
+        arr = array(typecode, parts[a])
         arr.byteswap()  # FITS is big-endian
         rows.append(list(arr))
     return rows
+
+
+FLAG_BITS = {"cosmic ray / transient": 1 << 0, "hot or dead": (1 << 6) | (1 << 10) | (1 << 11),
+             "persistence": 1 << 17, "dichroic edge": 1 << 7, "pipeline outlier": 1 << 19, "catalogued source": 1 << 21}
 
 
 def to_u8(rows):
@@ -197,7 +207,7 @@ def op_cutout(q, log):
         raise ValueError("only SPHEREx files on IRSA are allowed")
     ra, dec = num(q, "ra", 0, 360), num(q, "dec", -90, 90)
     half = int(num(q, "half", 4, MAX_HALF)) if "half" in q else 20
-    hd = headers(log, url)
+    hd = headers(log, url, want=("IMAGE", "FLAGS"))
     h, start = hd["IMAGE"]
     x, y = world_to_pixel(h, ra, dec)
     X, Y = int(round(x)), int(round(y))
@@ -206,7 +216,15 @@ def op_cutout(q, log):
     if x1 <= x0 or y1 <= y0:
         return {"inside": False, "x": x, "y": y, "log": log.calls}
     rows = read_rect(log, url, h, start, x0, y0, x1 - x0, y1 - y0)
-    return {"inside": True, "x": round(x, 2), "y": round(y, 2), "x0": x0, "y0": y0, "w": x1 - x0, "h": y1 - y0,
+    fh, fstart = hd["FLAGS"]
+    frows = read_rect(log, url, fh, fstart, x0, y0, x1 - x0, y1 - y0, typecode="i")
+    flags = []
+    for j, fr in enumerate(frows):
+        for i, v in enumerate(fr):
+            kinds = [k for k, bit in FLAG_BITS.items() if v & bit and k != "catalogued source"]
+            if kinds:
+                flags.append({"x": x0 + i, "y": y0 + j, "kinds": kinds})
+    return {"inside": True, "flags": flags, "x": round(x, 2), "y": round(y, 2), "x0": x0, "y0": y0, "w": x1 - x0, "h": y1 - y0,
             "stamp": to_u8(rows), "obs": h.get("OBSID"), "date": h.get("DATE-AVG"), "detector": h.get("DETECTOR"),
             "mjd": h.get("MJD-AVG"), "file_bytes": None, "log": log.calls,
             "total_ms": round((time.time() - log.t0) * 1000), "bytes": sum(c["bytes"] for c in log.calls)}
